@@ -1,10 +1,27 @@
 use crate::types::*;
 use actix_web::{get, post, web, Responder, Result};
+use serde::Serialize;
+
+#[derive(Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResult {
+    id: String,
+    title: String,
+    poster_url: String,
+    poster_hash: String,
+}
 
 #[post("/search")]
-pub async fn search_anime(data: web::Data<AppState>) -> String {
-    let app_name = &data.app_name; // <- get app_name
-    format!("Search for `{app_name}`") // <- response with app_name
+pub async fn search_anime(_app: web::Data<AppState>) -> Result<impl Responder> {
+    let results = vec![
+        SearchResult {
+            id: "tokyo_revengers".to_string(),
+            title: "Tokyo Revengers".to_string(),
+            poster_url: "https://kanime.fr/media/cache/d07f449fdeb9e559e19095db31da14ff".to_string(),
+            poster_hash: "blurhash".to_string()
+        }
+    ];
+    Ok(web::Json(results))
 }
 
 #[get("/anime/{id}")]

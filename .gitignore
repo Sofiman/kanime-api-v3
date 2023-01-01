@@ -11,7 +11,7 @@ target/
 *.pdb
 
 ### Workspace
-.idea
+.idea/
 
 ### Kanime
 config.json

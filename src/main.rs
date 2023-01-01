@@ -22,8 +22,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(AppState {
                 app_name: String::from("Actix Web"),
                 version_info: json!({
-                    "major": MAJOR_VERSION.unwrap_or("0"),
-                    "minor": MINOR_VERSION.unwrap_or("1"),
+                    "major": MAJOR_VERSION.unwrap_or("3"),
+                    "minor": MINOR_VERSION.unwrap_or("0"),
                     "patch": PATCH_VERSION.unwrap_or("0")
                 }).to_string()
             }))
