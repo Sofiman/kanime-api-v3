@@ -5,6 +5,6 @@ build:
   stage: build
   script:
     - printf "CI_JOB_ID=%s\nCI_COMMIT_TIMESTAMP=%s\nCI_COMMIT_SHA=%s\nCI_COMMIT_AUTHOR=%s" "$CI_JOB_ID" "$CI_COMMIT_TIMESTAMP" "$CI_COMMIT_SHA" "$CI_COMMIT_AUTHOR" > .env
-    - docker build -t kanime-api-v3 --build-arg "BUILD_ID=$CI_JOB_ID" . .
+    - docker build --build-arg "BUILD_ID=$CI_JOB_ID" -t kanime-api-v3 .
   rules:
     - if: $CI_COMMIT_BRANCH == 'master'
