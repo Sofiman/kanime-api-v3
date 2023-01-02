@@ -1,4 +1,7 @@
 FROM rust:1.65 AS build
+ARG BUILD_ID
+LABEL stage=build
+LABEL build=$BUILD_ID
 
 WORKDIR /usr/src/kanime-api-v3
 COPY . .
