@@ -1,43 +1,11 @@
-use std::fmt::{Debug, Display, Formatter};
-use actix_web::body::BoxBody;
-use actix_web::http::StatusCode;
-use actix_web::HttpResponse;
+use std::time::{SystemTime, UNIX_EPOCH};
+use mongodb::bson::{self, serde_helpers::hex_string_as_object_id};
 use serde::{Serialize, Deserialize};
 
 pub struct AppState {
     pub app_name: String,
-    pub version_info: String
-}
-
-struct KError {
-    err: anyhow::Error,
-}
-
-impl Debug for KError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.err)
-    }
-}
-
-impl Display for KError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.err)
-    }
-}
-
-impl actix_web::error::ResponseError for KError {
-    fn status_code(&self) -> StatusCode {
-        StatusCode::INTERNAL_SERVER_ERROR
-    }
-
-    fn error_response(&self) -> HttpResponse<BoxBody> {
-        HttpResponse::new(self.status_code())
-    }
-}
-impl From<anyhow::Error> for KError {
-    fn from(err: anyhow::Error) -> KError {
-        KError { err }
-    }
+    pub version_info: String,
+    pub mongodb: mongodb::Client
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -78,23 +46,35 @@ pub struct SeasonMapping {
     end_chapter: u16,
     start_volume: u16,
     end_volume: u16,
-    note: Option<String>,
-    note_author: Option<String>,
+    pinned_note: Option<Note>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Note {
+    timestamp: u64,
+    author: String,
+    content: String
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimeSeries {
+    #[serde(rename = "_id")]
+    #[serde(with = "hex_string_as_object_id")]
     id: String,
     titles: Vec<String>,
     manga: MangaReleaseInfo,
     anime: AnimeReleaseInfo,
     mapping: Vec<SeasonMapping>,
+    last_update: u64
 }
 
-pub fn get_anime(id: String) -> AnimeSeries {
+pub fn get_anime() -> AnimeSeries {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)
+        .unwrap().as_millis() as u64;
     AnimeSeries {
-        id,
+        id: bson::oid::ObjectId::new().to_hex(),
         titles: vec!["Tokyo Revengers".to_string()],
         manga: MangaReleaseInfo {
             author: "Ken Wakui".to_string(),
@@ -118,9 +98,9 @@ pub fn get_anime(id: String) -> AnimeSeries {
                 end_chapter: 73,
                 start_volume: 1,
                 end_volume: 8,
-                note: None,
-                note_author: None
+                pinned_note: None,
             }
-        ]
+        ],
+        last_update: now,
     }
 }

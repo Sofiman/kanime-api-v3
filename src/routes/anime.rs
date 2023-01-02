@@ -1,6 +1,10 @@
 use crate::types::*;
-use actix_web::{get, post, web, Responder, Result};
+use actix_web::{get, post, web, Responder, Result, HttpRequest};
+use log::info;
 use serde::Serialize;
+
+const DB_NAME: &str = "Kanime3";
+const COLL_NAME: &str = "animes";
 
 #[derive(Serialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -25,9 +29,12 @@ pub async fn search_anime(_app: web::Data<AppState>) -> Result<impl Responder> {
 }
 
 #[get("/anime/{id}")]
-pub async fn fetch_anime_details(path: web::Path<String>, _app: web::Data<AppState>) -> Result<impl Responder> {
-    let anime_id = path.into_inner();
-    let result = get_anime(anime_id);
+pub async fn fetch_anime_details(req: HttpRequest, path: web::Path<String>, _app: web::Data<AppState>) -> Result<impl Responder> {
+    if let Some(ip) = req.headers().get("CF-Connecting-IP") {
+        info!("Ip: {:?}", ip.to_str().unwrap_or("error"));
+    }
+    let _anime_id = path.into_inner();
+    let result = get_anime();
     Ok(web::Json(result))
 }
 

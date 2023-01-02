@@ -14,4 +14,4 @@ target/
 .idea/
 
 ### Kanime
-config.json
+config.toml
