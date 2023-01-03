@@ -1,11 +1,17 @@
-FROM rust:1.65 AS build
+FROM rust:1.65-slim-bullseye AS build
 ARG BUILD_ID
 LABEL stage=build
 LABEL build=$BUILD_ID
 
 WORKDIR /usr/src/kanime-api-v3
-COPY . .
 
+# prefetch dependencies
+RUN cargo init
+COPY Cargo.toml Cargo.toml
+RUN cargo fetch
+
+# compile
+COPY src src
 RUN cargo build --release
 
 FROM debian:bullseye-slim
