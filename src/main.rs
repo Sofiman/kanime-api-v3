@@ -1,3 +1,4 @@
+#[allow(dead_code)] // only for the types
 mod types;
 mod config;
 mod routes;
