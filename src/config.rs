@@ -43,8 +43,12 @@ impl MongoDBConfig {
 
 impl ToString for MongoDBConfig {
     fn to_string(&self) -> String {
-        format!("mongodb://{}:{}@{}:{}/", self.username, self.password,
-                self.host, self.port.unwrap_or(27017))
+        use url_escape::{encode_fragment, encode_path};
+        format!("mongodb://{}:{}@{}:{}/",
+                encode_fragment(&self.username),
+                self.password,
+                encode_path(&self.host),
+                self.port.unwrap_or(27017))
     }
 }
 

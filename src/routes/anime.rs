@@ -1,14 +1,21 @@
-use std::str::FromStr;
 use crate::types::*;
-use actix_web::{get, post, web, Responder, HttpResponse};
-use mongodb::bson::doc;
-use mongodb::bson::oid::ObjectId;
-use serde::Serialize;
+use std::str::FromStr;
+use actix_web::{guard, get, web, Responder, HttpResponse};
+use validator::Validate;
+use mongodb::bson::{doc,oid::ObjectId};
+use serde::{Deserialize, Serialize};
 use anyhow::{Context, Result};
-use log::error;
+use log::{error, info};
 
 const DB_NAME: &str = "Kanime3";
 const COLL_NAME: &str = "animes";
+
+#[derive(Deserialize, Serialize, Validate, Debug, Clone)]
+pub struct SearchQuery {
+    #[validate(length(min = 1, max = 128))]
+    query: String,
+    limit: Option<u16>
+}
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -18,8 +25,12 @@ pub struct SearchResult {
     poster: CachedImage,
 }
 
-#[post("/search")]
-pub async fn search_anime(_app: web::Data<AppState>) -> impl Responder {
+async fn search_animes(query: SearchQuery, _app: web::Data<AppState>) -> HttpResponse {
+    match query.validate() {
+        Ok(_) => (),
+        Err(e) => return KError::bad_request(e.to_string())
+    };
+    info!("in: {:?}", query);
     let results = vec![
         SearchResult {
             id: "63b44f977ef2f272e15f61ca".to_string(),
@@ -30,7 +41,15 @@ pub async fn search_anime(_app: web::Data<AppState>) -> impl Responder {
             ),
         }
     ];
-    web::Json(results)
+    HttpResponse::Ok().json(results)
+}
+
+pub async fn search_anime_form(form: web::Form<SearchQuery>, app: web::Data<AppState>) -> impl Responder {
+    search_animes(form.into_inner(), app).await
+}
+
+pub async fn search_anime_json(json: web::Json<SearchQuery>, app: web::Data<AppState>) -> impl Responder {
+    search_animes(json.into_inner(), app).await
 }
 
 async fn find_anime(anime_id: &ObjectId, app: web::Data<AppState>) -> Result<Option<WithOID<AnimeSeries>>> {
@@ -63,6 +82,12 @@ pub async fn fetch_anime_details(path: web::Path<String>, app: web::Data<AppStat
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(search_anime);
+    cfg.service(web::resource("/search")
+        .guard(guard::Header("content-type", "application/json"))
+        .route(web::post().to(search_anime_json)));
+    cfg.service(web::resource("/search")
+        .guard(guard::Header("content-type", "application/x-www-form-urlencoded"))
+        .route(web::post().to(search_anime_form)));
+
     cfg.service(fetch_anime_details);
 }
