@@ -1,13 +1,15 @@
 mod types;
 mod config;
 mod routes;
+mod middlewares;
 
 use config::*;
 use std::fs;
 use std::string::ToString;
 use actix_web::{web, App, HttpServer, middleware};
-use actix_web::middleware::Logger;
+use actix_web::middleware::{Condition, Logger};
 use types::AppState;
+use middlewares::ip::CloudflareClientIp;
 use serde_json::json;
 use env_logger::Env;
 use log::info;
@@ -35,7 +37,7 @@ async fn main() -> std::io::Result<()> {
         .expect("Error: Failed to connect to MongoDB");
     info!(target: "mongodb", "Successfully connected!");
 
-    info!(target: "http", "Listenning on {}:{}", addr.0, addr.1);
+    info!(target: "http", "Listening on {}:{}", addr.0, addr.1);
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(AppState {
@@ -49,6 +51,8 @@ async fn main() -> std::io::Result<()> {
             }))
             .wrap(Logger::new("%a %r » %s ~%Dms").log_target("http"))
             .wrap(middleware::Compress::default())
+            .wrap(Condition::new(!config.debug.unwrap_or(false),
+                                 CloudflareClientIp::new()))
             .configure(routes::configure)
     })
     .bind(addr)?

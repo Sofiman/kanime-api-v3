@@ -6,6 +6,7 @@ pub const DEFAULT_PORT: u16 = 80;
 
 #[derive(Deserialize)]
 pub struct Config {
+    pub debug: Option<bool>,
     pub http: HttpConfig,
     pub mongodb: MongoDBConfig,
     pub redis: RedisConfig,
