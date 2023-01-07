@@ -1,4 +1,4 @@
-FROM rust:1.65-slim-bullseye AS build
+FROM rust:1.65-bullseye AS build
 ARG BUILD_ID
 LABEL stage=build
 LABEL build=$BUILD_ID
