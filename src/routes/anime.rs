@@ -56,9 +56,10 @@ pub async fn sync_meilisearch(mongodb: &Client, meilisearch: &meilisearch_sdk::C
     let mut cur = col.find(doc! {}, FindOptions::builder().batch_size(batch_size).build())
         .await?;
     let batch_size = batch_size as usize;
-    let mut queue: Vec<WithID<AnimeSeries>> = Vec::with_capacity(batch_size);
+    let mut queue: Vec<AnimeSeriesSearchEntry> = Vec::with_capacity(batch_size);
     while cur.advance().await? {
-        queue.push(cur.deserialize_current()?.into());
+        let current: WithOID<AnimeSeries> = cur.deserialize_current()?;
+        queue.push(current.into());
         if queue.len() == batch_size {
             index.add_or_replace(&queue, Some(ANIME_PRIMARY_KEY)).await?
                 .wait_for_completion(&meilisearch, None, None).await?;

@@ -193,6 +193,28 @@ pub struct AnimeSeriesSearchEntry {
     poster: CachedImage,
 }
 
+impl From<WithOID<AnimeSeries>> for AnimeSeriesSearchEntry {
+    fn from(value: WithOID<AnimeSeries>) -> Self {
+        AnimeSeriesSearchEntry {
+            id: value.id,
+            titles: value.inner.titles,
+            author: value.inner.manga.author,
+            poster: value.inner.poster
+        }
+    }
+}
+
+impl From<WithID<AnimeSeries>> for AnimeSeriesSearchEntry {
+    fn from(value: WithID<AnimeSeries>) -> Self {
+        AnimeSeriesSearchEntry {
+            id: value.id,
+            titles: value.inner.titles,
+            author: value.inner.manga.author,
+            poster: value.inner.poster
+        }
+    }
+}
+
 pub fn get_search_entry() -> AnimeSeriesSearchEntry {
     AnimeSeriesSearchEntry {
         id: "63b44f977ef2f272e15f61ca".to_string(),
