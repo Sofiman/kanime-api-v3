@@ -13,7 +13,7 @@ use types::AppState;
 use middlewares::ip::CloudflareClientIp;
 use serde_json::json;
 use env_logger::Env;
-use log::info;
+use log::{error, info, warn};
 use mongodb::Client;
 use gethostname::gethostname;
 
@@ -33,10 +33,23 @@ async fn main() -> std::io::Result<()> {
     info!("Starting server as `{}`", name);
 
     info!(target: "mongodb", "Connecting to db as `{}` ...", name);
-    let client = Client::with_uri_str(config.mongodb.with_client_name(&name))
+    let mongodb = Client::with_uri_str(config.mongodb.with_client_name(&name))
         .await
         .expect("Error: Failed to connect to MongoDB");
     info!(target: "mongodb", "Successfully connected!");
+
+    let meilisearch: meilisearch_sdk::Client = config.meilisearch.as_client();
+    if meilisearch.is_healthy().await {
+        info!(target: "meilisearch", "Successfully connected!");
+        if config.meilisearch.auto_sync.unwrap_or(true) {
+            match routes::anime::sync_meilisearch(&mongodb, &meilisearch).await {
+                Err(e) => error!("Could not perform auto-sync: {e}"),
+                _ => (),
+            }
+        }
+    } else {
+        warn!(target: "meilisearch", "No signs of life...");
+    }
 
     info!(target: "http", "Listening on {}:{}", addr.0, addr.1);
     HttpServer::new(move || {
@@ -48,7 +61,8 @@ async fn main() -> std::io::Result<()> {
                     "minor": MINOR_VERSION.unwrap_or("0"),
                     "patch": PATCH_VERSION.unwrap_or("0")
                 }).to_string(),
-                mongodb: client.clone()
+                mongodb: mongodb.clone(),
+                meilisearch: meilisearch.clone(),
             }))
             .wrap(Logger::new("%a %r » %s ~%Dms").log_target("http"))
             .wrap(middleware::Compress::default())

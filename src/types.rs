@@ -7,6 +7,7 @@ pub struct AppState {
     pub app_name: String,
     pub version_info: String,
     pub mongodb: mongodb::Client,
+    pub meilisearch: meilisearch_sdk::Client
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -177,7 +178,31 @@ pub struct AnimeSeries {
     manga: MangaReleaseInfo,
     anime: AnimeReleaseInfo,
     mapping: Vec<SeasonMapping>,
-    last_update: u64
+    last_update: u64,
+}
+
+// Meilisearch related
+pub const ANIME_PRIMARY_KEY: &str = "id";
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AnimeSeriesSearchEntry {
+    id: String,
+    titles: Vec<String>,
+    author: String,
+    poster: CachedImage,
+}
+
+pub fn get_search_entry() -> AnimeSeriesSearchEntry {
+    AnimeSeriesSearchEntry {
+        id: "63b44f977ef2f272e15f61ca".to_string(),
+        titles: vec!["Tokyo Revengers".to_string()],
+        author: "Ken Wakui".to_string(),
+        poster: CachedImage::with_placeholder(
+            "d07f449fdeb9e559e19095db31da14ff".to_string(),
+            "TFOBAk}sIT9r?ZI=u,$zKK#lNYx[".to_string(),
+        ),
+    }
 }
 
 pub fn get_anime() -> AnimeSeries {
