@@ -17,7 +17,7 @@ toml = "0.5.10"
 url-escape = "0.1.1"
 anyhow = "1.0"
 validator = { version = "0.16", features = ["derive"] }
-meilisearch-sdk = "0.21"
+meilisearch-sdk = { version = "0.21", default-features = false, features = ["default"] }
 
 [profile.release]
 lto = "thin"
