@@ -6,12 +6,13 @@ use serde::{Serialize, Deserialize};
 pub struct AppState {
     pub app_name: String,
     pub version_info: String,
-    pub mongodb: mongodb::Client
+    pub mongodb: mongodb::Client,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum KErrorType {
+    BadRequest,
     InternalError,
     NotFound,
 }
@@ -20,36 +21,36 @@ pub enum KErrorType {
 #[serde(rename_all = "camelCase")]
 pub struct KError {
     pub error: KErrorType,
-    pub error_description: String
+    pub error_description: String,
 }
 
 #[allow(dead_code)]
 impl KError {
     pub fn bad_request(details: String) -> HttpResponse {
         HttpResponse::BadRequest().json(Self {
-            error: KErrorType::InternalError,
-            error_description: details
+            error: KErrorType::BadRequest,
+            error_description: details,
         })
     }
 
     pub fn not_found() -> HttpResponse {
         HttpResponse::BadRequest().json(Self {
             error: KErrorType::NotFound,
-            error_description: "Not Found".to_string()
+            error_description: "Not Found".to_string(),
         })
     }
 
     pub fn internal_error(details: String) -> HttpResponse {
         HttpResponse::BadRequest().json(Self {
             error: KErrorType::InternalError,
-            error_description: details
+            error_description: details,
         })
     }
 
     pub fn db_error() -> HttpResponse {
         HttpResponse::BadRequest().json(Self {
             error: KErrorType::InternalError,
-            error_description: "Could not retrieve data from database".to_string()
+            error_description: "Could not retrieve data from database".to_string(),
         })
     }
 }
@@ -86,7 +87,7 @@ impl<T> From<WithOID<T>> for WithID<T> {
     fn from(value: WithOID<T>) -> Self {
         WithID {
             id: value.id,
-            inner: value.inner
+            inner: value.inner,
         }
     }
 }
@@ -97,7 +98,7 @@ pub struct MangaReleaseInfo {
     author: String,
     volumes: u16,
     chapters: u16,
-    release_year: u16
+    release_year: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -106,7 +107,7 @@ pub struct AnimeReleaseInfo {
     studios: Vec<String>,
     seasons: u16,
     episodes: u16,
-    release_year: u16
+    release_year: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -115,7 +116,7 @@ pub enum SeasonKind {
     Season,
     Movie,
     Oav,
-    SpinOff
+    SpinOff,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -137,7 +138,7 @@ pub struct SeasonMapping {
 pub struct Note {
     timestamp: u64,
     author: String,
-    content: String
+    content: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -184,21 +185,21 @@ pub fn get_anime() -> AnimeSeries {
         .unwrap().as_millis() as u64;
     AnimeSeries {
         titles: vec!["Tokyo Revengers".to_string()],
-        poster: CachedImage {
-            key: "d07f449fdeb9e559e19095db31da14ff".to_string(),
-            placeholder: Some("TFOBAk}sIT9r?ZI=u,$zKK#lNYx[".to_string())
-        },
+        poster: CachedImage::with_placeholder(
+            "d07f449fdeb9e559e19095db31da14ff".to_string(),
+            "TFOBAk}sIT9r?ZI=u,$zKK#lNYx[".to_string(),
+        ),
         manga: MangaReleaseInfo {
             author: "Ken Wakui".to_string(),
             volumes: 30,
             chapters: 270,
-            release_year: 2017
+            release_year: 2017,
         },
         anime: AnimeReleaseInfo {
             studios: vec!["Liden Films".to_string()],
             seasons: 1,
             episodes: 24,
-            release_year: 2021
+            release_year: 2021,
         },
         mapping: vec![
             SeasonMapping {

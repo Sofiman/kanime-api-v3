@@ -17,31 +17,12 @@ pub struct SearchQuery {
     limit: Option<u16>
 }
 
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchResult {
-    id: String,
-    title: String,
-    poster: CachedImage,
-}
-
 async fn search_animes(query: SearchQuery, _app: web::Data<AppState>) -> HttpResponse {
     match query.validate() {
         Ok(_) => (),
         Err(e) => return KError::bad_request(e.to_string())
     };
-    info!("in: {:?}", query);
-    let results = vec![
-        SearchResult {
-            id: "63b44f977ef2f272e15f61ca".to_string(),
-            title: "Tokyo Revengers".to_string(),
-            poster: CachedImage::with_placeholder(
-                "d07f449fdeb9e559e19095db31da14ff".to_string(),
-                "TFOBAk}sIT9r?ZI=u,$zKK#lNYx[".to_string()
-            ),
-        }
-    ];
-    HttpResponse::Ok().json(results)
+    HttpResponse::Ok().json(query)
 }
 
 pub async fn search_anime_form(form: web::Form<SearchQuery>, app: web::Data<AppState>) -> impl Responder {
