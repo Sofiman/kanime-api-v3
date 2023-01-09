@@ -9,6 +9,7 @@ use log::{error, info};
 use mongodb::Client;
 use meilisearch_sdk::errors::{Error, ErrorCode, MeilisearchError};
 use mongodb::options::FindOptions;
+use crate::middlewares::auth::{KanimeAuth, Session};
 
 const DB_NAME: &str = "Kanime3";
 const COLL_NAME: &str = "animes";
@@ -141,6 +142,10 @@ pub async fn fetch_anime_details(path: web::Path<String>, app: web::Data<AppStat
     }
 }
 
+async fn secure_endpoint(_app: web::Data<AppState>, session: Option<web::ReqData<Session>>) -> HttpResponse {
+    HttpResponse::Ok().body(format!("{session:?}"))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(web::resource("/search")
         .guard(guard::Header("content-type", "application/json"))
@@ -148,6 +153,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(web::resource("/search")
         .guard(guard::Header("content-type", "application/x-www-form-urlencoded"))
         .route(web::post().to(search_anime_form)));
+
+    cfg.service(web::resource("/secure")
+        .wrap(KanimeAuth())
+        .to(secure_endpoint));
 
     cfg.service(fetch_anime_details);
 }
