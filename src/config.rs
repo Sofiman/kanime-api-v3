@@ -5,6 +5,7 @@ use serde::Deserialize;
 pub const CONFIG_FILE: &str = "config.toml";
 pub const DEFAULT_PORT: u16 = 80;
 pub const DEFAULT_MONGO_PORT: u16 = 27017;
+pub const DEFAULT_REDIS_PORT: u16 = 6379;
 
 #[derive(Deserialize)]
 pub struct Config<'ha, 'moa, 'mob, 'moc, 'ra, 'rb, 'rc, 'msa, 'msb> {
@@ -65,6 +66,17 @@ pub struct RedisConfig<'a, 'b, 'c> {
     pub port: Option<u16>,
     pub username: &'b str,
     pub password: &'c str,
+}
+
+impl ToString for RedisConfig<'_, '_, '_> {
+    fn to_string(&self) -> String {
+        use url_escape::{encode_fragment, encode_path};
+        format!("redis://{}:{}@{}:{}/",
+                encode_fragment(self.username),
+                self.password,
+                encode_path(self.host),
+                self.port.unwrap_or(DEFAULT_REDIS_PORT))
+    }
 }
 
 #[derive(Deserialize)]

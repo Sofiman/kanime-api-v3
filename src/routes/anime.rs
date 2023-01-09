@@ -31,7 +31,7 @@ pub async fn sync_meilisearch(mongodb: &Client, meilisearch: &meilisearch_sdk::C
                 .create_index(ANIMES_INDEX, Some(ANIME_PRIMARY_KEY)).await?
                 .wait_for_completion(&meilisearch, None, None).await?
                 .try_make_index(&meilisearch)
-                .map_err(|t| anyhow!("Failed to create index `{ANIMES_INDEX}`: {:?}", t))?;
+                .map_err(|t| anyhow!("Failed to create index `{ANIMES_INDEX}`: {t:?}"))?;
             info!("Successfully created index `{ANIMES_INDEX}`");
 
             index.set_searchable_attributes(&["titles", "author"]).await?
@@ -39,7 +39,7 @@ pub async fn sync_meilisearch(mongodb: &Client, meilisearch: &meilisearch_sdk::C
             info!("Setup completed for index `{ANIMES_INDEX}`");
             index
         },
-        Err(e) => bail!("{}", e),
+        Err(e) => bail!("{e}"),
     };
 
     let col: mongodb::Collection<WithOID<AnimeSeries>> = mongodb.database(DB_NAME).collection(COLL_NAME);
@@ -49,8 +49,9 @@ pub async fn sync_meilisearch(mongodb: &Client, meilisearch: &meilisearch_sdk::C
     if index_stats.number_of_documents == anime_count {
         return Ok(());
     }
-    info!(target: "meilisearch", "Sync required for index `{ANIMES_INDEX}`: entry count mismatch, expected {} but found {}",
-        anime_count, index_stats.number_of_documents);
+    info!(target: "meilisearch",
+        "Sync required for index `{ANIMES_INDEX}`: entry count mismatch, expected {anime_count} but found {}",
+        index_stats.number_of_documents);
 
     let batch_size = 32;
     let mut cur = col.find(doc! {}, FindOptions::builder().batch_size(batch_size).build())
@@ -97,7 +98,7 @@ async fn search_animes(query: SearchQuery, app: web::Data<AppState>) -> HttpResp
             HttpResponse::Ok().json(docs)
         }
         Err(e) => {
-            error!("Could not search: {}", e);
+            error!("Could not search: {e}");
             KError::internal_error("Could not perform search".to_string())
         }
     }
@@ -134,7 +135,7 @@ pub async fn fetch_anime_details(path: web::Path<String>, app: web::Data<AppStat
         },
         Ok(None) => KError::not_found(),
         Err(e) => {
-            error!("Could not find anime:\n{:?}", e);
+            error!("Could not find anime:\n{e:?}");
             KError::db_error()
         }
     }

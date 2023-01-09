@@ -7,7 +7,8 @@ pub struct AppState {
     pub app_name: String,
     pub version_info: String,
     pub mongodb: mongodb::Client,
-    pub meilisearch: meilisearch_sdk::Client
+    pub meilisearch: meilisearch_sdk::Client,
+    pub redis: redis::Client,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]

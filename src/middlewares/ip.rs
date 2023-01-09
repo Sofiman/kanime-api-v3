@@ -1,10 +1,6 @@
-use std::future::{Future, Ready, ready};
+use std::future::{Ready, ready};
 use std::net::{IpAddr, SocketAddr};
-use std::pin::Pin;
-use actix_web::{
-    dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    Error,
-};
+use actix_web::{dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform}, Error};
 use anyhow::{anyhow, Result};
 
 pub struct CloudflareClientIp;
@@ -57,7 +53,7 @@ impl<S, B> Service<ServiceRequest> for CloudflareClientIpMiddleware<S>
 {
     type Response = ServiceResponse<B>;
     type Error = Error;
-    type Future = Pin<Box<dyn Future<Output=Result<Self::Response, Self::Error>>>>;
+    type Future = S::Future;
 
     forward_ready!(service);
 
@@ -66,10 +62,6 @@ impl<S, B> Service<ServiceRequest> for CloudflareClientIpMiddleware<S>
             req.head_mut().peer_addr = Some(ip);
         }
 
-        let res = self.service.call(req);
-
-        Box::pin(async move {
-            res.await
-        })
+        self.service.call(req)
     }
 }

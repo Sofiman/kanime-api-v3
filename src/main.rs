@@ -30,13 +30,15 @@ async fn main() -> std::io::Result<()> {
     let config: Config = toml::from_str(&raw_config)?;
     let addr: (String, u16) = config.http.clone().into();
     let name: String = gethostname().into_string().unwrap_or_else(|_| "kanime-api-v3".to_string());
-    info!("Starting server as `{}`", name);
+    info!("Starting server as `{name}`");
 
-    info!(target: "mongodb", "Connecting to db as `{}` ...", name);
+    info!(target: "mongodb", "Connecting to db...");
     let mongodb = Client::with_uri_str(config.mongodb.with_client_name(&name))
-        .await
-        .expect("Error: Failed to connect to MongoDB");
+        .await.expect("Error: Failed to connect to MongoDB");
     info!(target: "mongodb", "Successfully connected!");
+
+    let redis = redis::Client::open(config.redis.to_string())
+        .expect("Could not connect to redis");
 
     let meilisearch: meilisearch_sdk::Client = config.meilisearch.as_client();
     if meilisearch.is_healthy().await {
@@ -63,6 +65,7 @@ async fn main() -> std::io::Result<()> {
                 }).to_string(),
                 mongodb: mongodb.clone(),
                 meilisearch: meilisearch.clone(),
+                redis: redis.clone(),
             }))
             .wrap(Logger::new("%a %r » %s ~%Dms").log_target("http"))
             .wrap(middleware::Compress::default())
