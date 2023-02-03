@@ -12,6 +12,8 @@ target/
 
 ### Workspace
 .idea/
+.DS_Store
+*.swp
 
 ### Kanime
 config.toml

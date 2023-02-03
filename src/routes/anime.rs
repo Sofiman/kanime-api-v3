@@ -1,4 +1,3 @@
-use crate::types::*;
 use std::str::FromStr;
 use actix_web::{guard, get, web, Responder, HttpResponse};
 use validator::Validate;
@@ -6,14 +5,17 @@ use mongodb::bson::{doc, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 use anyhow::{Context, Result, anyhow, bail};
 use log::{error, info};
-use mongodb::Client;
 use meilisearch_sdk::errors::{Error, ErrorCode, MeilisearchError};
-use mongodb::options::FindOptions;
-use crate::middlewares::auth::{KanimeAuth, Session};
+use mongodb::{Client, options::FindOptions};
+use std::fs::File;
+
+use crate::types::*;
+use crate::middlewares::auth::{KanimeAuth, RequireAdminGuard};
 
 const DB_NAME: &str = "Kanime3";
 const COLL_NAME: &str = "animes";
 const ANIMES_INDEX: &str = "animes";
+const ANIMES_SEARCH_DEFAULT_LIMIT: u32 = 10;
 const ANIMES_SEARCH_SOFT_LIMIT: u32 = 100;
 
 #[derive(Deserialize, Serialize, Validate, Debug, Clone)]
@@ -88,7 +90,8 @@ async fn search_animes(query: SearchQuery, app: web::Data<AppState>) -> HttpResp
         .search()
         .with_query(&query.query)
         .with_offset(query.offset.unwrap_or(0) as usize)
-        .with_limit(query.limit.unwrap_or(ANIMES_SEARCH_SOFT_LIMIT) as usize)
+        .with_limit(query.limit.unwrap_or(ANIMES_SEARCH_DEFAULT_LIMIT)
+            .min(ANIMES_SEARCH_SOFT_LIMIT) as usize)
         .execute()
         .await;
 
@@ -142,8 +145,57 @@ pub async fn fetch_anime_details(path: web::Path<String>, app: web::Data<AppStat
     }
 }
 
-async fn secure_endpoint(_app: web::Data<AppState>, session: Option<web::ReqData<Session>>) -> HttpResponse {
-    HttpResponse::Ok().body(format!("{session:?}"))
+async fn push_anime(_app: web::Data<AppState>) -> HttpResponse {
+    HttpResponse::Ok().body("TODO: push anime")
+}
+
+async fn update_anime(_app: web::Data<AppState>) -> HttpResponse {
+    HttpResponse::Ok().body("TODO: update anime")
+}
+
+fn create_backup(anime: &WithID<AnimeSeries>) -> anyhow::Result<()> {
+    let backup = File::create(format!("{}.deleted.json", anime.id))?;
+    match serde_json::to_writer(backup, &anime) {
+        Err(_) => {
+            let json = serde_json::to_string(&anime)?;
+            warn!("Could not save backup file: anime =`{json}`");
+            Ok(())
+        }
+        _ => {
+            info!("Successfully backed up deleted anime");
+            Ok(())
+        }
+    }
+}
+
+async fn delete_anime(path: web::Path<String>, app: web::Data<AppState>) -> HttpResponse {
+    let anime_id = path.into_inner();
+    if anime_id.len() != 24 {
+        return KError::bad_request("The provided ID is not valid".to_string());
+    }
+    let Ok(anime_id) = ObjectId::from_str(&anime_id) else {
+        return KError::bad_request("The provided ID is not valid".to_string());
+    };
+    match find_anime(&anime_id, app.clone()).await {
+        Ok(Some(anime)) => {
+            let anime: WithID<AnimeSeries> = anime.into();
+            create_backup(&anime).unwrap_or_else(|_| error!("Could not save backup file"));
+
+            let collection: mongodb::Collection<WithOID<AnimeSeries>> =
+                app.mongodb.database(DB_NAME).collection(COLL_NAME);
+            match collection.delete_one(doc! { "_id": anime_id }, None).await {
+                Ok(mongodb::results::DeleteResult { deleted_count: 1, .. }) =>
+                    HttpResponse::NoContent().finish(),
+                Ok(_) => KError::internal_error("Anime was found but not deleted".to_string()),
+                Err(e) => KError::internal_error(e.to_string())
+            }
+        },
+        Ok(None) => KError::not_found(),
+        Err(e) => {
+            error!("Could not find anime:\n{e:?}");
+            KError::db_error()
+        }
+    }
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -154,9 +206,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .guard(guard::Header("content-type", "application/x-www-form-urlencoded"))
         .route(web::post().to(search_anime_form)));
 
-    cfg.service(web::resource("/secure")
+    cfg.service(web::resource("/s/anime/{id}")
         .wrap(KanimeAuth())
-        .to(secure_endpoint));
+        .route(web::post().guard(RequireAdminGuard).to(push_anime))
+        .route(web::patch().guard(RequireAdminGuard).to(update_anime))
+        .route(web::delete().guard(RequireAdminGuard).to(delete_anime)));
 
     cfg.service(fetch_anime_details);
 }

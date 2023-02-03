@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 actix-web = "4"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"], default-features = false }
 serde_json = "1"
 log = "0.4"
 env_logger = "0.10.0"
@@ -16,10 +16,9 @@ gethostname = "0.4.1"
 toml = "0.5.10"
 url-escape = "0.1.1"
 anyhow = "1.0"
-validator = { version = "0.16", features = ["derive"] }
+validator = { version = "0.16", features = ["derive"], default-features = false }
 meilisearch-sdk = "0.21"
-redis = { version = "0.22.2", features = ["tokio-comp", "json"] }
-derive-redis-json = "0.1.1"
+redis = { version = "0.22.2", default-features = false, features = ["tokio-comp"] }
 
 [profile.release]
 lto = "thin"

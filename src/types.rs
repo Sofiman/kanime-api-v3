@@ -14,6 +14,7 @@ pub struct AppState {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum KErrorType {
+    Forbidden,
     BadRequest,
     InternalError,
     NotFound,
@@ -46,6 +47,13 @@ impl KError {
         HttpResponse::BadRequest().json(Self {
             error: KErrorType::InternalError,
             error_description: details,
+        })
+    }
+
+    pub fn forbidden() -> HttpResponse {
+        HttpResponse::Forbidden().json(Self {
+            error: KErrorType::Forbidden,
+            error_description: "Forbidden".to_string(),
         })
     }
 

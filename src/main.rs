@@ -16,6 +16,7 @@ use env_logger::Env;
 use log::{error, info, warn};
 use mongodb::Client;
 use gethostname::gethostname;
+use crate::types::get_anime;
 
 const MAJOR_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION_MAJOR");
 const MINOR_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION_MINOR");
@@ -36,6 +37,10 @@ async fn main() -> std::io::Result<()> {
     let mongodb = Client::with_uri_str(config.mongodb.with_client_name(&name))
         .await.expect("Error: Failed to connect to MongoDB");
     info!(target: "mongodb", "Successfully connected!");
+
+    let collection = mongodb.database("Kanime3").collection("animes");
+    let r = collection.insert_one(get_anime(), None).await.unwrap();
+    println!("{r:?}");
 
     let redis = redis::Client::open(config.redis.to_string())
         .expect("Could not connect to redis");
