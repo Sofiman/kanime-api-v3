@@ -1,10 +1,9 @@
-use std::str::FromStr;
 use actix_web::{guard, get, web, Responder, HttpResponse};
 use validator::Validate;
 use mongodb::bson::{doc, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 use anyhow::{Context, Result, anyhow, bail};
-use log::{error, info};
+use log::{error, warn, info};
 use meilisearch_sdk::errors::{Error, ErrorCode, MeilisearchError};
 use mongodb::{Client, options::FindOptions};
 use std::fs::File;
@@ -129,7 +128,7 @@ pub async fn fetch_anime_details(path: web::Path<String>, app: web::Data<AppStat
     if anime_id.len() != 24 {
         return KError::bad_request("The provided ID is not valid".to_string());
     }
-    let Ok(anime_id) = ObjectId::from_str(&anime_id) else {
+    let Ok(anime_id) = ObjectId::parse_str(&anime_id) else {
         return KError::bad_request("The provided ID is not valid".to_string());
     };
     match find_anime(&anime_id, app).await {
@@ -173,7 +172,7 @@ async fn delete_anime(path: web::Path<String>, app: web::Data<AppState>) -> Http
     if anime_id.len() != 24 {
         return KError::bad_request("The provided ID is not valid".to_string());
     }
-    let Ok(anime_id) = ObjectId::from_str(&anime_id) else {
+    let Ok(anime_id) = ObjectId::parse_str(&anime_id) else {
         return KError::bad_request("The provided ID is not valid".to_string());
     };
     match find_anime(&anime_id, app.clone()).await {
@@ -185,7 +184,10 @@ async fn delete_anime(path: web::Path<String>, app: web::Data<AppState>) -> Http
                 app.mongodb.database(DB_NAME).collection(COLL_NAME);
             match collection.delete_one(doc! { "_id": anime_id }, None).await {
                 Ok(mongodb::results::DeleteResult { deleted_count: 1, .. }) =>
+                {
+                    // TODO: Remove from meilisearch too
                     HttpResponse::NoContent().finish(),
+                }
                 Ok(_) => KError::internal_error("Anime was found but not deleted".to_string()),
                 Err(e) => KError::internal_error(e.to_string())
             }
