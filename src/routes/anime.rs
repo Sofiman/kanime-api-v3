@@ -144,11 +144,14 @@ pub async fn fetch_anime_details(path: web::Path<String>, app: web::Data<AppStat
     }
 }
 
-async fn push_anime(_app: web::Data<AppState>) -> HttpResponse {
+async fn push_anime(payload: web::Json<AnimeSeries>, _app: web::Data<AppState>) -> HttpResponse {
+    warn!("todo: Push {payload:?}");
     HttpResponse::Ok().body("TODO: push anime")
 }
 
-async fn update_anime(_app: web::Data<AppState>) -> HttpResponse {
+async fn update_anime(path: web::Path<String>, payload: web::Json<AnimeSeries>,
+    _app: web::Data<AppState>) -> HttpResponse {
+    warn!("todo: Update {path:?} with {payload:?}");
     HttpResponse::Ok().body("TODO: update anime")
 }
 
@@ -157,7 +160,7 @@ fn create_backup(anime: &WithID<AnimeSeries>) -> anyhow::Result<()> {
     match serde_json::to_writer(backup, &anime) {
         Err(_) => {
             let json = serde_json::to_string(&anime)?;
-            warn!("Could not save backup file: anime =`{json}`");
+            warn!("Could not save backup file, anime = `{json}`");
             Ok(())
         }
         _ => {
@@ -186,7 +189,7 @@ async fn delete_anime(path: web::Path<String>, app: web::Data<AppState>) -> Http
                 Ok(mongodb::results::DeleteResult { deleted_count: 1, .. }) =>
                 {
                     // TODO: Remove from meilisearch too
-                    HttpResponse::NoContent().finish(),
+                    HttpResponse::NoContent().finish()
                 }
                 Ok(_) => KError::internal_error("Anime was found but not deleted".to_string()),
                 Err(e) => KError::internal_error(e.to_string())
@@ -208,9 +211,12 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .guard(guard::Header("content-type", "application/x-www-form-urlencoded"))
         .route(web::post().to(search_anime_form)));
 
+    cfg.service(web::resource("/s/anime")
+        .wrap(KanimeAuth())
+        .route(web::post().guard(RequireAdminGuard).to(push_anime)));
+
     cfg.service(web::resource("/s/anime/{id}")
         .wrap(KanimeAuth())
-        .route(web::post().guard(RequireAdminGuard).to(push_anime))
         .route(web::patch().guard(RequireAdminGuard).to(update_anime))
         .route(web::delete().guard(RequireAdminGuard).to(delete_anime)));
 
