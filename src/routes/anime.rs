@@ -29,7 +29,7 @@ pub struct SearchQuery {
 impl SearchQuery {
     pub fn validate(&self) -> bool {
         self.query.len() >= ANIMES_SEARCH_QUERY_MIN_LEN &&
-            self.query.len() >= ANIMES_SEARCH_QUERY_MAX_LEN
+            self.query.len() <= ANIMES_SEARCH_QUERY_MAX_LEN
     }
 }
 
@@ -161,15 +161,26 @@ async fn push_anime(payload: Json<AnimeSeries>, _app: Data<AppState>) -> HttpRes
 }
 
 async fn patch_anime(path: Path<String>, patch: Json<AnimeSeriesPatch>,
-    _app: Data<AppState>) -> HttpResponse {
+    app: Data<AppState>) -> HttpResponse {
     let Some(anime_id) = to_oid(path.into_inner()) else {
         return KError::bad_request("The provided ID is not valid");
     };
     if patch.is_empty() {
         return KError::bad_request("Patch is empty")
     }
-    warn!("todo: Update {anime_id:?} with {patch:?}");
-    HttpResponse::Ok().body("TODO: update anime")
+
+    match find_anime(&anime_id, app.clone()).await {
+        Ok(Some(anime)) => {
+            warn!("TODO: Update {anime_id} with {patch:?}");
+            let anime: WithID<AnimeSeries> = anime.into();
+            HttpResponse::Ok().json(anime)
+        }
+        Ok(None) => KError::not_found(),
+        Err(e) => {
+            error!("Could not find anime:\n{e:?}");
+            KError::db_error()
+        }
+    }
 }
 
 fn create_backup(anime: &WithID<AnimeSeries>) -> anyhow::Result<()> {
