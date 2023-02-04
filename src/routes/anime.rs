@@ -1,5 +1,4 @@
-use actix_web::{guard, get, web, Responder, HttpResponse};
-use validator::Validate;
+use actix_web::{guard, get, web::{self, Data, Json, Path, Form}, Responder, HttpResponse};
 use mongodb::bson::{doc, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 use anyhow::{Context, Result, anyhow, bail};
@@ -9,20 +8,36 @@ use mongodb::{Client, options::FindOptions};
 use std::fs::File;
 
 use crate::types::*;
-use crate::middlewares::auth::{KanimeAuth, RequireAdminGuard};
+use crate::middlewares::auth::RequireAdminGuard;
 
 const DB_NAME: &str = "Kanime3";
 const COLL_NAME: &str = "animes";
 const ANIMES_INDEX: &str = "animes";
+const ANIMES_INDEX_BATCH_SIZE: usize = 32;
+const ANIMES_SEARCH_QUERY_MIN_LEN: usize = 2;
+const ANIMES_SEARCH_QUERY_MAX_LEN: usize = 128;
 const ANIMES_SEARCH_DEFAULT_LIMIT: u32 = 10;
 const ANIMES_SEARCH_SOFT_LIMIT: u32 = 100;
 
-#[derive(Deserialize, Serialize, Validate, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SearchQuery {
-    #[validate(length(min = 1, max = 128))]
     query: String,
     offset: Option<u32>,
     limit: Option<u32>,
+}
+
+impl SearchQuery {
+    pub fn validate(&self) -> bool {
+        self.query.len() >= ANIMES_SEARCH_QUERY_MIN_LEN &&
+            self.query.len() >= ANIMES_SEARCH_QUERY_MAX_LEN
+    }
+}
+
+fn to_oid(id: String) -> Option<ObjectId> {
+    if id.len() != 24 { // ObjectId length
+        return None;
+    }
+    ObjectId::parse_str(&id).ok()
 }
 
 pub async fn sync_meilisearch(mongodb: &Client, meilisearch: &meilisearch_sdk::Client) -> Result<()> {
@@ -55,15 +70,16 @@ pub async fn sync_meilisearch(mongodb: &Client, meilisearch: &meilisearch_sdk::C
         "Sync required for index `{ANIMES_INDEX}`: entry count mismatch, expected {anime_count} but found {}",
         index_stats.number_of_documents);
 
-    let batch_size = 32;
-    let mut cur = col.find(doc! {}, FindOptions::builder().batch_size(batch_size).build())
+    let mut cur = col
+        .find(doc! {}, FindOptions::builder()
+            .batch_size(ANIMES_INDEX_BATCH_SIZE as u32).build())
         .await?;
-    let batch_size = batch_size as usize;
-    let mut queue: Vec<AnimeSeriesSearchEntry> = Vec::with_capacity(batch_size);
+    let mut queue: Vec<AnimeSeriesSearchEntry>
+        = Vec::with_capacity(ANIMES_INDEX_BATCH_SIZE);
     while cur.advance().await? {
         let current: WithOID<AnimeSeries> = cur.deserialize_current()?;
         queue.push(current.into());
-        if queue.len() == batch_size {
+        if queue.len() == ANIMES_INDEX_BATCH_SIZE {
             index.add_or_replace(&queue, Some(ANIME_PRIMARY_KEY)).await?
                 .wait_for_completion(&meilisearch, None, None).await?;
             queue.clear();
@@ -78,11 +94,10 @@ pub async fn sync_meilisearch(mongodb: &Client, meilisearch: &meilisearch_sdk::C
     Ok(())
 }
 
-async fn search_animes(query: SearchQuery, app: web::Data<AppState>) -> HttpResponse {
-    match query.validate() {
-        Ok(_) => (),
-        Err(e) => return KError::bad_request(e.to_string())
-    };
+async fn search_animes(query: SearchQuery, app: Data<AppState>) -> HttpResponse {
+    if !query.validate() {
+        return KError::bad_request("Query length must be between 2 and 128 characters");
+    }
 
     let results = app.meilisearch
         .index(ANIMES_INDEX)
@@ -102,20 +117,20 @@ async fn search_animes(query: SearchQuery, app: web::Data<AppState>) -> HttpResp
         }
         Err(e) => {
             error!("Could not search: {e}");
-            KError::internal_error("Could not perform search".to_string())
+            KError::internal_error("Could not perform search")
         }
     }
 }
 
-pub async fn search_anime_form(form: web::Form<SearchQuery>, app: web::Data<AppState>) -> impl Responder {
+pub async fn search_anime_form(form: Form<SearchQuery>, app: Data<AppState>) -> impl Responder {
     search_animes(form.into_inner(), app).await
 }
 
-pub async fn search_anime_json(json: web::Json<SearchQuery>, app: web::Data<AppState>) -> impl Responder {
+pub async fn search_anime_json(json: Json<SearchQuery>, app: Data<AppState>) -> impl Responder {
     search_animes(json.into_inner(), app).await
 }
 
-async fn find_anime(anime_id: &ObjectId, app: web::Data<AppState>) -> Result<Option<WithOID<AnimeSeries>>> {
+async fn find_anime(anime_id: &ObjectId, app: Data<AppState>) -> Result<Option<WithOID<AnimeSeries>>> {
     let collection = app.mongodb.database(DB_NAME)
         .collection(COLL_NAME);
     collection.find_one(doc! { "_id": anime_id }, None)
@@ -123,13 +138,9 @@ async fn find_anime(anime_id: &ObjectId, app: web::Data<AppState>) -> Result<Opt
 }
 
 #[get("/anime/{id}")]
-pub async fn fetch_anime_details(path: web::Path<String>, app: web::Data<AppState>) -> impl Responder {
-    let anime_id = path.into_inner();
-    if anime_id.len() != 24 {
-        return KError::bad_request("The provided ID is not valid".to_string());
-    }
-    let Ok(anime_id) = ObjectId::parse_str(&anime_id) else {
-        return KError::bad_request("The provided ID is not valid".to_string());
+pub async fn fetch_anime_details(path: Path<String>, app: Data<AppState>) -> impl Responder {
+    let Some(anime_id) = to_oid(path.into_inner()) else {
+        return KError::bad_request("The provided ID is not valid");
     };
     match find_anime(&anime_id, app).await {
         Ok(Some(anime)) => {
@@ -144,14 +155,20 @@ pub async fn fetch_anime_details(path: web::Path<String>, app: web::Data<AppStat
     }
 }
 
-async fn push_anime(payload: web::Json<AnimeSeries>, _app: web::Data<AppState>) -> HttpResponse {
+async fn push_anime(payload: Json<AnimeSeries>, _app: Data<AppState>) -> HttpResponse {
     warn!("todo: Push {payload:?}");
     HttpResponse::Ok().body("TODO: push anime")
 }
 
-async fn update_anime(path: web::Path<String>, payload: web::Json<AnimeSeries>,
-    _app: web::Data<AppState>) -> HttpResponse {
-    warn!("todo: Update {path:?} with {payload:?}");
+async fn patch_anime(path: Path<String>, patch: Json<AnimeSeriesPatch>,
+    _app: Data<AppState>) -> HttpResponse {
+    let Some(anime_id) = to_oid(path.into_inner()) else {
+        return KError::bad_request("The provided ID is not valid");
+    };
+    if patch.is_empty() {
+        return KError::bad_request("Patch is empty")
+    }
+    warn!("todo: Update {anime_id:?} with {patch:?}");
     HttpResponse::Ok().body("TODO: update anime")
 }
 
@@ -170,13 +187,9 @@ fn create_backup(anime: &WithID<AnimeSeries>) -> anyhow::Result<()> {
     }
 }
 
-async fn delete_anime(path: web::Path<String>, app: web::Data<AppState>) -> HttpResponse {
-    let anime_id = path.into_inner();
-    if anime_id.len() != 24 {
-        return KError::bad_request("The provided ID is not valid".to_string());
-    }
-    let Ok(anime_id) = ObjectId::parse_str(&anime_id) else {
-        return KError::bad_request("The provided ID is not valid".to_string());
+async fn delete_anime(path: Path<String>, app: Data<AppState>) -> HttpResponse {
+    let Some(anime_id) = to_oid(path.into_inner()) else {
+        return KError::bad_request("The provided ID is not valid");
     };
     match find_anime(&anime_id, app.clone()).await {
         Ok(Some(anime)) => {
@@ -191,8 +204,8 @@ async fn delete_anime(path: web::Path<String>, app: web::Data<AppState>) -> Http
                     // TODO: Remove from meilisearch too
                     HttpResponse::NoContent().finish()
                 }
-                Ok(_) => KError::internal_error("Anime was found but not deleted".to_string()),
-                Err(e) => KError::internal_error(e.to_string())
+                Ok(_) => KError::internal_error("Anime was found but not deleted"),
+                Err(e) => KError::internal_error(e.to_string().as_str())
             }
         },
         Ok(None) => KError::not_found(),
@@ -212,12 +225,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route(web::post().to(search_anime_form)));
 
     cfg.service(web::resource("/s/anime")
-        .wrap(KanimeAuth())
         .route(web::post().guard(RequireAdminGuard).to(push_anime)));
 
     cfg.service(web::resource("/s/anime/{id}")
-        .wrap(KanimeAuth())
-        .route(web::patch().guard(RequireAdminGuard).to(update_anime))
+        .route(web::patch().guard(RequireAdminGuard).to(patch_anime))
         .route(web::delete().guard(RequireAdminGuard).to(delete_anime)));
 
     cfg.service(fetch_anime_details);

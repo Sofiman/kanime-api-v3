@@ -22,6 +22,14 @@ const NANOID_ALPHABET: [char; 64] = [
     'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
 ];
 
+pub fn pick_user_id(req: &ServiceRequest) -> String {
+    if let Some(ses) = req.extensions().get::<Session>() {
+        format!("<{:?}@{}>", ses.role, ses.user_id)
+    } else {
+        "<A>".to_string()
+    }
+}
+
 fn validate_nanoid(str: &str, expected_len: u8) -> bool {
     str.len() == expected_len as usize && str.chars().all(|c| NANOID_ALPHABET.contains(&c))
 }
@@ -42,7 +50,7 @@ pub struct Session {
     pub role: Role
 }
 
-pub struct KanimeAuth();
+pub struct KanimeAuth;
 
 // Middleware factory is `Transform` trait
 // `S` - type of the next service

@@ -3,13 +3,9 @@ use std::net::{IpAddr, SocketAddr};
 use actix_web::{dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform}, Error};
 use anyhow::{anyhow, Result};
 
-pub struct CloudflareClientIp;
+const CLOUDFLARE_IP_HEADER: &str = "CF-Connecting-IP";
 
-impl CloudflareClientIp {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
+pub struct CloudflareClientIp;
 
 // Middleware factory is `Transform` trait
 // `S` - type of the next service
@@ -37,7 +33,7 @@ pub struct CloudflareClientIpMiddleware<S> {
 
 impl<S> CloudflareClientIpMiddleware<S> {
     fn header_value_to_ip(req: &ServiceRequest) -> Result<SocketAddr> {
-        let ip = req.headers().get("CF-Connecting-IP")
+        let ip = req.headers().get(CLOUDFLARE_IP_HEADER)
             .ok_or_else(|| anyhow!("No cloudflare IP header"))?;
         let peer_addr: IpAddr = ip.to_str()?.parse()?;
         let local = req.peer_addr().ok_or_else(|| anyhow!("No peer addr"))?.port();

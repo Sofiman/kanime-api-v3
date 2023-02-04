@@ -16,7 +16,6 @@ gethostname = "0.4.1"
 toml = "0.5.10"
 url-escape = "0.1.1"
 anyhow = "1.0"
-validator = { version = "0.16", features = ["derive"] }
 meilisearch-sdk = "0.21"
 redis = { version = "0.22.2", default-features = false, features = ["tokio-comp"] }
 

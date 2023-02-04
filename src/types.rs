@@ -2,6 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use actix_web::HttpResponse;
 use mongodb::bson::serde_helpers::hex_string_as_object_id;
 use serde::{Serialize, Deserialize};
+use serde_json::json;
 
 pub struct AppState {
     pub app_name: String,
@@ -20,48 +21,43 @@ pub enum KErrorType {
     NotFound,
 }
 
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct KError {
-    pub error: KErrorType,
-    pub error_description: String,
-}
+pub struct KError;
 
 #[allow(dead_code)]
 impl KError {
-    pub fn bad_request(details: String) -> HttpResponse {
-        HttpResponse::BadRequest().json(Self {
-            error: KErrorType::BadRequest,
-            error_description: details,
-        })
+    pub fn bad_request(details: &'_ str) -> HttpResponse {
+        HttpResponse::BadRequest().json(json!({
+            "error": KErrorType::BadRequest,
+            "errorDescription": details,
+        }))
     }
 
     pub fn not_found() -> HttpResponse {
-        HttpResponse::BadRequest().json(Self {
-            error: KErrorType::NotFound,
-            error_description: "Not Found".to_string(),
-        })
+        HttpResponse::BadRequest().json(json!({
+            "error": KErrorType::NotFound,
+            "errorDescription": "Not Found",
+        }))
     }
 
-    pub fn internal_error(details: String) -> HttpResponse {
-        HttpResponse::BadRequest().json(Self {
-            error: KErrorType::InternalError,
-            error_description: details,
-        })
+    pub fn internal_error(details: &'_ str) -> HttpResponse {
+        HttpResponse::BadRequest().json(json!({
+            "error": KErrorType::InternalError,
+            "errorDescription": details,
+        }))
     }
 
     pub fn forbidden() -> HttpResponse {
-        HttpResponse::Forbidden().json(Self {
-            error: KErrorType::Forbidden,
-            error_description: "Forbidden".to_string(),
-        })
+        HttpResponse::Forbidden().json(json!({
+            "error": KErrorType::Forbidden,
+            "errorDescription": "Forbidden",
+        }))
     }
 
     pub fn db_error() -> HttpResponse {
-        HttpResponse::BadRequest().json(Self {
-            error: KErrorType::InternalError,
-            error_description: "Could not retrieve data from database".to_string(),
-        })
+        HttpResponse::BadRequest().json(json!({
+            "error": KErrorType::InternalError,
+            "errorDescription": "Could not retrieve data from database",
+        }))
     }
 }
 
@@ -188,6 +184,37 @@ pub struct AnimeSeries {
     anime: AnimeReleaseInfo,
     mapping: Vec<SeasonMapping>,
     last_update: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AnimeSeriesPatch {
+    titles: Option<Vec<String>>,
+    manga: Option<MangaReleaseInfo>,
+    anime: Option<AnimeReleaseInfo>,
+    mapping: Option<Vec<SeasonMapping>>,
+}
+
+impl AnimeSeriesPatch {
+    pub fn is_empty(&self) -> bool {
+        self.titles.is_none() && self.manga.is_none() && self.anime.is_none() &&
+            self.mapping.is_none()
+    }
+
+    pub fn merge(self, dst: &mut AnimeSeries) {
+        if let Some(titles) = self.titles {
+            dst.titles = titles;
+        }
+        if let Some(manga) = self.manga {
+            dst.manga = manga;
+        }
+        if let Some(anime) = self.anime {
+            dst.anime = anime;
+        }
+        if let Some(mapping) = self.mapping {
+            dst.mapping = mapping;
+        }
+    }
 }
 
 // Meilisearch related

@@ -10,12 +10,14 @@ use std::string::ToString;
 use actix_web::{web, App, HttpServer, middleware};
 use actix_web::middleware::{Condition, Logger};
 use types::AppState;
-use middlewares::ip::CloudflareClientIp;
 use serde_json::json;
 use env_logger::Env;
 use log::{error, info, warn};
 use mongodb::Client;
 use gethostname::gethostname;
+
+use middlewares::ip::CloudflareClientIp;
+use middlewares::auth::{KanimeAuth, pick_user_id};
 
 const MAJOR_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION_MAJOR");
 const MINOR_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION_MINOR");
@@ -29,7 +31,8 @@ async fn main() -> std::io::Result<()> {
     let raw_config = fs::read_to_string(CONFIG_FILE)?;
     let config: Config = toml::from_str(&raw_config)?;
     let addr: (String, u16) = config.http.clone().into();
-    let name: String = gethostname().into_string().unwrap_or_else(|_| "kanime-api-v3".to_string());
+    let name: String = gethostname().into_string()
+        .unwrap_or_else(|_| "kanime-api-v3".to_string());
     info!("Starting server as `{name}`");
 
     info!(target: "mongodb", "Connecting to db...");
@@ -68,10 +71,13 @@ async fn main() -> std::io::Result<()> {
                 meilisearch: meilisearch.clone(),
                 redis: redis.clone(),
             }))
-            .wrap(Logger::new("%a %r » %s ~%Dms").log_target("http"))
+            .wrap(Logger::new("%a %r %{UID}xi » %s ~%Dms")
+                .custom_request_replace("UID", pick_user_id)
+                .log_target("http"))
             .wrap(middleware::Compress::default())
             .wrap(Condition::new(!config.debug.unwrap_or(false),
-                                 CloudflareClientIp::new()))
+                                 CloudflareClientIp))
+            .wrap(KanimeAuth)
             .configure(routes::configure)
     })
     .bind(addr)?
