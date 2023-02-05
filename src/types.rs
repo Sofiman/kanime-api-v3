@@ -183,6 +183,7 @@ pub struct AnimeSeries {
     anime: AnimeReleaseInfo,
     mapping: Vec<SeasonMapping>,
     last_update: u64,
+    // TODO: added date and bar code ids
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -199,12 +200,23 @@ pub struct AnimeSeriesPatch {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     mapping: Option<Vec<SeasonMapping>>,
+
+    #[serde(skip_deserializing)]
+    last_update: u64,
 }
 
 impl AnimeSeriesPatch {
     pub fn is_empty(&self) -> bool {
         self.titles.is_none() && self.manga.is_none() && self.anime.is_none() &&
             self.mapping.is_none()
+    }
+
+    pub fn seal(&mut self) -> Result<bson::Document, bson::ser::Error> {
+        self.last_update = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("The time can never be earlier than the Unix epoch")
+            .as_millis() as u64;
+        bson::to_document(self)
     }
 }
 

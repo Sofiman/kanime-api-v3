@@ -160,12 +160,11 @@ async fn push_anime(payload: Json<AnimeSeries>, _app: Data<AppState>) -> HttpRes
     HttpResponse::Ok().body("TODO: push anime")
 }
 
-async fn apply_anime_patch(anime_id: &ObjectId, app: &AppState, patch: AnimeSeriesPatch)
+async fn apply_anime_patch(anime_id: &ObjectId, app: &AppState, mut patch: AnimeSeriesPatch)
     -> Result<bool> {
     let collection: mongodb::Collection<AnimeSeries> =
         app.mongodb.database(DB_NAME).collection(COLL_NAME);
-    let patch = bson::to_document(&patch)?;
-    let res = collection.update_one(doc! { "_id": anime_id }, doc! { "$set": patch }, None)
+    let res = collection.update_one(doc! { "_id": anime_id }, doc! { "$set": patch.seal()? }, None)
         .await.context("Updating anime with the specified ID")?;
     Ok(res.matched_count >= 1)
 }
