@@ -116,7 +116,7 @@ async fn search_animes(query: SearchQuery, app: Data<AppState>) -> HttpResponse 
             HttpResponse::Ok().json(docs)
         }
         Err(e) => {
-            error!("Could not search: {e}");
+            error!("Could not search: {e:?}");
             KError::internal_error("Could not perform search")
         }
     }
@@ -149,7 +149,7 @@ pub async fn fetch_anime_details(path: Path<String>, app: Data<AppState>) -> imp
         },
         Ok(None) => KError::not_found(),
         Err(e) => {
-            error!("Could not find anime: {e}");
+            error!("Could not find anime: {e:?}");
             KError::db_error()
         }
     }
@@ -175,12 +175,12 @@ async fn push_anime(payload: Json<AnimeSeries>, app: Data<AppState>) -> HttpResp
                 .expect("Value must be ObjectId").to_hex();
             let anime = WithID::new(inserted_id, anime);
             if let Err(e) = send_anime_to_meili(anime.clone().into(), &app).await {
-                warn!("Could not add pushed anime to meilisearch: {e}");
+                warn!("Could not add pushed anime to meilisearch: {e:?}");
             }
             HttpResponse::Created().json(anime)
         },
         Err(e) => {
-            error!("Could not push anime to db: {e}");
+            error!("Could not push anime to db: {e:?}");
             KError::db_error()
         }
     }
@@ -222,7 +222,7 @@ async fn patch_anime(path: Path<String>, patch: Json<AnimeSeriesPatch>,
         Ok(true) => HttpResponse::NoContent().finish(),
         Ok(false) => KError::not_found(),
         Err(e) => {
-            error!("Could not find anime:\n{e}");
+            error!("Could not find anime:\n{e:?}");
             KError::db_error()
         }
     }
@@ -265,17 +265,17 @@ async fn delete_anime(path: Path<String>, app: Data<AppState>) -> HttpResponse {
         Ok(Some(anime)) => {
             let anime: WithID<AnimeSeries> = anime.into();
             create_backup(&anime)
-                .unwrap_or_else(|e| error!("Could not save backup file `{anime:?}`: {e}"));
+                .unwrap_or_else(|e| error!("Could not save backup file `{anime:?}`: {e:?}"));
 
             if let Err(e) = delete_from_meili(&anime.id, &app).await {
-                warn!("Could not remove deleted anime from meilisearch: {e}");
+                warn!("Could not remove deleted anime from meilisearch: {e:?}");
             }
 
             HttpResponse::NoContent().finish()
         },
         Ok(None) => KError::not_found(),
         Err(e) => {
-            error!("Could not find anime: {e}");
+            error!("Could not find anime: {e:?}");
             KError::db_error()
         }
     }
