@@ -1,10 +1,16 @@
 use std::future::{Future, Ready, ready};
 use std::pin::Pin;
 use std::rc::Rc;
-use actix_web::{Error, error::ErrorForbidden};
-use actix_web::{dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform}, HttpMessage, web};
-use actix_web::guard::{Guard, GuardContext};
-use actix_web::http::header::HeaderValue;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use actix_web::{
+    HttpMessage, HttpResponse, Error, web,
+    body::EitherBody,
+    guard::{Guard, GuardContext},
+    http::{header::HeaderValue, StatusCode},
+    dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
+};
+
 use redis::AsyncCommands;
 use anyhow::{anyhow, Result};
 use log::warn;
@@ -62,7 +68,7 @@ impl<S, B> Transform<S, ServiceRequest> for KanimeAuth
         S::Future: 'static,
         B: 'static,
 {
-    type Response = ServiceResponse<B>;
+    type Response = ServiceResponse<EitherBody<B>>;
     type Error = Error;
     type Transform = KanimeAuthMiddleware<S>;
     type InitError = ();
@@ -73,29 +79,42 @@ impl<S, B> Transform<S, ServiceRequest> for KanimeAuth
     }
 }
 
+enum SessionResult {
+    Valid(Session),
+    Invalid(&'static str, StatusCode),
+    Anonymous
+}
+
 pub struct KanimeAuthMiddleware<S> {
     service: Rc<S>,
 }
 
 impl<S> KanimeAuthMiddleware<S> {
-    async fn get_session(app: web::Data<AppState>, req: &ServiceRequest) -> Result<Option<Session>> {
+    async fn get_session(app: web::Data<AppState>, req: &ServiceRequest) -> Result<SessionResult> {
+        use SessionResult::*;
         if let Some(Ok(val)) = req.headers().get(AUTHORIZATION_HEADER).map(HeaderValue::to_str) {
             if let Some((TOKEN_BASE_TYPE, right)) = val.split_once(" ") {
                 if !validate_nanoid(right, TOKEN_LENGTH) {
-                    return Ok(None); // Bad token formatting
+                    return Ok(Invalid("Bad token formatting", StatusCode::BAD_REQUEST));
                 }
-                let raw: String = app.redis.get_async_connection()
-                    .await?
-                    .get(format!("{TOKEN_REDIS_KEY_PREFIX}:{right}"))
-                    .await
+
+                let raw: Option<String> = app.redis.get_async_connection().await?
+                    .get(format!("{TOKEN_REDIS_KEY_PREFIX}:{right}")).await
                     .map_err(|e| anyhow!("Get token from redis: {e}"))?;
-                let session: Session = serde_json::from_str(&raw)
-                    .map_err(|e| anyhow!("Deserialize redis result: {e}"))?;
-                // TODO: Check expires_on on session
-                return Ok(Some(session));
+                let Some(raw) = raw else {
+                    return Ok(Invalid("Token is invalid or has expired", StatusCode::FORBIDDEN));
+                };
+
+                let session: Session = serde_json::from_str(&raw)?;
+                let now = SystemTime::now().duration_since(UNIX_EPOCH)?
+                    .as_millis() as u64;
+                if session.expires_on <= now {
+                    return Ok(Invalid("Token is invalid or has expired", StatusCode::FORBIDDEN));
+                }
+                return Ok(Valid(session));
             }
         }
-        Ok(None)
+        Ok(Anonymous)
     }
 }
 
@@ -105,25 +124,31 @@ impl<S, B> Service<ServiceRequest> for KanimeAuthMiddleware<S>
         S::Future: 'static,
         B: 'static,
 {
-    type Response = ServiceResponse<B>;
+    type Response = ServiceResponse<EitherBody<B>>;
     type Error = Error;
     type Future =  Pin<Box<dyn Future<Output=Result<Self::Response, Self::Error>>>>;
 
     forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
+        use SessionResult::*;
         let svc = self.service.clone();
+        let app = req.app_data::<web::Data<AppState>>().unwrap().clone();
         Box::pin(async move {
-            let app = req.app_data::<web::Data<AppState>>().unwrap().clone();
             match Self::get_session(app, &req).await {
-                Ok(Some(session)) => {
+                Ok(Anonymous) => svc.call(req).await.map(ServiceResponse::map_into_left_body),
+                Ok(Valid(session)) => {
                     req.extensions_mut().insert(session);
-                    svc.call(req).await
+                    svc.call(req).await.map(ServiceResponse::map_into_left_body)
                 },
-                Ok(None) => svc.call(req).await,
+                Ok(Invalid(msg, code)) => {
+                    let res = HttpResponse::build(code).body(msg);
+                    Ok(req.into_response(res.map_into_right_body()))
+                },
                 Err(e) => {
                     warn!("Could not authenticate request: {e}");
-                    Err(ErrorForbidden("Could not authenticate request"))?
+                    let res = HttpResponse::InternalServerError().body("Could not authenticate request");
+                    Ok(req.into_response(res.map_into_right_body()))
                 }
             }
         })
