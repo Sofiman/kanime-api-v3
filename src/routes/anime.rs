@@ -1,5 +1,5 @@
 use actix_web::{guard, get, web::{self, Data, Json, Path, Form}, Responder, HttpResponse};
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::{bson::{doc, oid::ObjectId}, results::InsertOneResult};
 use serde::{Deserialize, Serialize};
 use anyhow::{Context, Result, anyhow, bail};
 use log::{error, warn, info};
@@ -155,9 +155,21 @@ pub async fn fetch_anime_details(path: Path<String>, app: Data<AppState>) -> imp
     }
 }
 
-async fn push_anime(payload: Json<AnimeSeries>, _app: Data<AppState>) -> HttpResponse {
-    warn!("todo: Push {payload:?}");
-    HttpResponse::Ok().body("TODO: push anime")
+async fn push_anime(payload: Json<AnimeSeries>, app: Data<AppState>) -> HttpResponse {
+    let anime = payload.into_inner();
+    let collection: mongodb::Collection<AnimeSeries> =
+        app.mongodb.database(DB_NAME).collection(COLL_NAME);
+    match collection.insert_one(&anime, None).await {
+        Ok(InsertOneResult { inserted_id, .. }) => {
+            let inserted_id = inserted_id.as_object_id()
+                .expect("Value must be ObjectId").to_hex();
+            HttpResponse::Created().json(WithID::new(inserted_id, anime))
+        },
+        Err(e) => {
+            error!("Could not push anime to db: {e:?}");
+            KError::db_error()
+        }
+    }
 }
 
 async fn apply_anime_patch(anime_id: &ObjectId, app: &AppState, mut patch: AnimeSeriesPatch)

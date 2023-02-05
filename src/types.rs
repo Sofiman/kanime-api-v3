@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use actix_web::HttpResponse;
-use mongodb::bson::serde_helpers::hex_string_as_object_id;
+use mongodb::bson::{self, serde_helpers::hex_string_as_object_id};
 use serde::{Serialize, Deserialize};
 use serde_json::json;
 
@@ -83,6 +83,11 @@ pub struct WithID<T> {
 }
 
 impl<T> WithID<T> {
+
+    pub fn new(id: String, inner: T) -> Self {
+        Self { id, inner }
+    }
+
     pub fn into_inner(self) -> T {
         self.inner
     }
