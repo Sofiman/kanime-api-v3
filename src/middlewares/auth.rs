@@ -1,12 +1,13 @@
 use std::future::{Future, Ready, ready};
 use std::pin::Pin;
 use std::rc::Rc;
-use actix_web::{dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform}, Error, HttpMessage, web};
+use actix_web::{Error, error::ErrorForbidden};
+use actix_web::{dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform}, HttpMessage, web};
 use actix_web::guard::{Guard, GuardContext};
 use actix_web::http::header::HeaderValue;
 use redis::AsyncCommands;
-use anyhow::{anyhow, Result, bail};
-use log::{warn, info};
+use anyhow::{anyhow, Result};
+use log::warn;
 use serde::{Deserialize, Serialize};
 use crate::types::AppState;
 
@@ -34,7 +35,7 @@ fn validate_nanoid(str: &str, expected_len: u8) -> bool {
     str.len() == expected_len as usize && str.chars().all(|c| NANOID_ALPHABET.contains(&c))
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
     User,
@@ -77,11 +78,11 @@ pub struct KanimeAuthMiddleware<S> {
 }
 
 impl<S> KanimeAuthMiddleware<S> {
-    async fn get_session(app: web::Data<AppState>, req: &ServiceRequest) -> Result<Session> {
+    async fn get_session(app: web::Data<AppState>, req: &ServiceRequest) -> Result<Option<Session>> {
         if let Some(Ok(val)) = req.headers().get(AUTHORIZATION_HEADER).map(HeaderValue::to_str) {
             if let Some((TOKEN_BASE_TYPE, right)) = val.split_once(" ") {
                 if !validate_nanoid(right, TOKEN_LENGTH) {
-                    bail!("bad token format");
+                    return Ok(None); // Bad token formatting
                 }
                 let raw: String = app.redis.get_async_connection()
                     .await?
@@ -91,10 +92,10 @@ impl<S> KanimeAuthMiddleware<S> {
                 let session: Session = serde_json::from_str(&raw)
                     .map_err(|e| anyhow!("Deserialize redis result: {e}"))?;
                 // TODO: Check expires_on on session
-                return Ok(session);
+                return Ok(Some(session));
             }
         }
-        bail!("no header")
+        Ok(None)
     }
 }
 
@@ -115,26 +116,30 @@ impl<S, B> Service<ServiceRequest> for KanimeAuthMiddleware<S>
         Box::pin(async move {
             let app = req.app_data::<web::Data<AppState>>().unwrap().clone();
             match Self::get_session(app, &req).await {
-                Ok(session) => {
-                    if matches!(session.role, Role::Admin | Role::Mod) {
-                        info!("Authenticated {} as {:?} successfully!",
-                            session.user_id, session.role);
-                    }
+                Ok(Some(session)) => {
                     req.extensions_mut().insert(session);
+                    svc.call(req).await
                 },
-                Err(e) => warn!("Could not authenticate request: {e}")
+                Ok(None) => svc.call(req).await,
+                Err(e) => {
+                    warn!("Could not authenticate request: {e}");
+                    Err(ErrorForbidden("Could not authenticate request"))?
+                }
             }
-            svc.call(req).await
         })
     }
 }
 
-pub struct RequireAdminGuard;
+#[derive(Debug, Clone, Copy)]
+pub struct RequireRoleGuard(pub Role);
 
-impl Guard for RequireAdminGuard {
+impl Guard for RequireRoleGuard {
     fn check(&self, req: &GuardContext) -> bool {
         let exts = req.req_data();
         let session: Option<&Session> = exts.get();
-        matches!(session, Some(Session { role: Role::Admin, .. }))
+        match session {
+            Some(session) if session.role == self.0 => true,
+            _ => false
+        }
     }
 }

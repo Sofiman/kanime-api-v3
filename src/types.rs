@@ -23,7 +23,6 @@ pub enum KErrorType {
 
 pub struct KError;
 
-#[allow(dead_code)]
 impl KError {
     pub fn bad_request(details: &'_ str) -> HttpResponse {
         HttpResponse::BadRequest().json(json!({
@@ -61,7 +60,7 @@ impl KError {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct WithOID<T> {
     #[serde(rename = "_id")]
     #[serde(with = "hex_string_as_object_id")]
@@ -76,7 +75,7 @@ impl<T> WithOID<T> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct WithID<T> {
     pub id: String,
     #[serde(flatten)]
@@ -189,9 +188,16 @@ pub struct AnimeSeries {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimeSeriesPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
     titles: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     manga: Option<MangaReleaseInfo>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     anime: Option<AnimeReleaseInfo>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     mapping: Option<Vec<SeasonMapping>>,
 }
 
@@ -199,21 +205,6 @@ impl AnimeSeriesPatch {
     pub fn is_empty(&self) -> bool {
         self.titles.is_none() && self.manga.is_none() && self.anime.is_none() &&
             self.mapping.is_none()
-    }
-
-    pub fn merge(self, dst: &mut AnimeSeries) {
-        if let Some(titles) = self.titles {
-            dst.titles = titles;
-        }
-        if let Some(manga) = self.manga {
-            dst.manga = manga;
-        }
-        if let Some(anime) = self.anime {
-            dst.anime = anime;
-        }
-        if let Some(mapping) = self.mapping {
-            dst.mapping = mapping;
-        }
     }
 }
 

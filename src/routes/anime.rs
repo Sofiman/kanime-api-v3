@@ -8,7 +8,7 @@ use mongodb::{Client, options::FindOptions};
 use std::fs::File;
 
 use crate::types::*;
-use crate::middlewares::auth::RequireAdminGuard;
+use crate::middlewares::auth::{Role, RequireRoleGuard};
 
 const DB_NAME: &str = "Kanime3";
 const COLL_NAME: &str = "animes";
@@ -49,11 +49,11 @@ pub async fn sync_meilisearch(mongodb: &Client, meilisearch: &meilisearch_sdk::C
                 .wait_for_completion(&meilisearch, None, None).await?
                 .try_make_index(&meilisearch)
                 .map_err(|t| anyhow!("Failed to create index `{ANIMES_INDEX}`: {t:?}"))?;
-            info!("Successfully created index `{ANIMES_INDEX}`");
+            info!(target: "meilisearch","Successfully created index `{ANIMES_INDEX}`");
 
             index.set_searchable_attributes(&["titles", "author"]).await?
                 .wait_for_completion(&meilisearch, None, None).await?;
-            info!("Setup completed for index `{ANIMES_INDEX}`");
+            info!(target: "meilisearch","Setup completed for index `{ANIMES_INDEX}`");
             index
         },
         Err(e) => bail!("{e}"),
@@ -130,7 +130,7 @@ pub async fn search_anime_json(json: Json<SearchQuery>, app: Data<AppState>) -> 
     search_animes(json.into_inner(), app).await
 }
 
-async fn find_anime(anime_id: &ObjectId, app: Data<AppState>) -> Result<Option<WithOID<AnimeSeries>>> {
+async fn find_anime(anime_id: &ObjectId, app: &AppState) -> Result<Option<WithOID<AnimeSeries>>> {
     let collection = app.mongodb.database(DB_NAME)
         .collection(COLL_NAME);
     collection.find_one(doc! { "_id": anime_id }, None)
@@ -142,7 +142,7 @@ pub async fn fetch_anime_details(path: Path<String>, app: Data<AppState>) -> imp
     let Some(anime_id) = to_oid(path.into_inner()) else {
         return KError::bad_request("The provided ID is not valid");
     };
-    match find_anime(&anime_id, app).await {
+    match find_anime(&anime_id, &app).await {
         Ok(Some(anime)) => {
             let renamed: WithID<AnimeSeries> = anime.into();
             HttpResponse::Ok().json(renamed)
@@ -160,22 +160,29 @@ async fn push_anime(payload: Json<AnimeSeries>, _app: Data<AppState>) -> HttpRes
     HttpResponse::Ok().body("TODO: push anime")
 }
 
+async fn apply_anime_patch(anime_id: &ObjectId, app: &AppState, patch: AnimeSeriesPatch)
+    -> Result<bool> {
+    let collection: mongodb::Collection<AnimeSeries> =
+        app.mongodb.database(DB_NAME).collection(COLL_NAME);
+    let patch = bson::to_document(&patch)?;
+    let res = collection.update_one(doc! { "_id": anime_id }, doc! { "$set": patch }, None)
+        .await.context("Updating anime with the specified ID")?;
+    Ok(res.matched_count >= 1)
+}
+
 async fn patch_anime(path: Path<String>, patch: Json<AnimeSeriesPatch>,
     app: Data<AppState>) -> HttpResponse {
     let Some(anime_id) = to_oid(path.into_inner()) else {
         return KError::bad_request("The provided ID is not valid");
     };
+    let patch = patch.into_inner();
     if patch.is_empty() {
         return KError::bad_request("Patch is empty")
     }
 
-    match find_anime(&anime_id, app.clone()).await {
-        Ok(Some(anime)) => {
-            warn!("TODO: Update {anime_id} with {patch:?}");
-            let anime: WithID<AnimeSeries> = anime.into();
-            HttpResponse::Ok().json(anime)
-        }
-        Ok(None) => KError::not_found(),
+    match apply_anime_patch(&anime_id, &app, patch).await {
+        Ok(true) => HttpResponse::NoContent().finish(),
+        Ok(false) => KError::not_found(),
         Err(e) => {
             error!("Could not find anime:\n{e:?}");
             KError::db_error()
@@ -198,26 +205,25 @@ fn create_backup(anime: &WithID<AnimeSeries>) -> anyhow::Result<()> {
     }
 }
 
+async fn find_and_delete(anime_id: &ObjectId, app: &AppState) -> Result<Option<WithOID<AnimeSeries>>> {
+    let collection: mongodb::Collection<WithOID<AnimeSeries>> =
+        app.mongodb.database(DB_NAME).collection(COLL_NAME);
+    collection.find_one_and_delete(doc! { "_id": anime_id }, None).await
+        .context("Find one and delete anime")
+}
+
 async fn delete_anime(path: Path<String>, app: Data<AppState>) -> HttpResponse {
     let Some(anime_id) = to_oid(path.into_inner()) else {
         return KError::bad_request("The provided ID is not valid");
     };
-    match find_anime(&anime_id, app.clone()).await {
+    match find_and_delete(&anime_id, &app).await {
         Ok(Some(anime)) => {
             let anime: WithID<AnimeSeries> = anime.into();
-            create_backup(&anime).unwrap_or_else(|_| error!("Could not save backup file"));
+            create_backup(&anime)
+                .unwrap_or_else(|e| error!("Could not save backup file {anime:?}; error={e:?}"));
 
-            let collection: mongodb::Collection<WithOID<AnimeSeries>> =
-                app.mongodb.database(DB_NAME).collection(COLL_NAME);
-            match collection.delete_one(doc! { "_id": anime_id }, None).await {
-                Ok(mongodb::results::DeleteResult { deleted_count: 1, .. }) =>
-                {
-                    // TODO: Remove from meilisearch too
-                    HttpResponse::NoContent().finish()
-                }
-                Ok(_) => KError::internal_error("Anime was found but not deleted"),
-                Err(e) => KError::internal_error(e.to_string().as_str())
-            }
+            // TODO: Remove from meilisearch too
+            HttpResponse::NoContent().finish()
         },
         Ok(None) => KError::not_found(),
         Err(e) => {
@@ -235,12 +241,13 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .guard(guard::Header("content-type", "application/x-www-form-urlencoded"))
         .route(web::post().to(search_anime_form)));
 
+    let admin_only = RequireRoleGuard(Role::Admin);
     cfg.service(web::resource("/s/anime")
-        .route(web::post().guard(RequireAdminGuard).to(push_anime)));
+        .route(web::post().guard(admin_only).to(push_anime)));
 
     cfg.service(web::resource("/s/anime/{id}")
-        .route(web::patch().guard(RequireAdminGuard).to(patch_anime))
-        .route(web::delete().guard(RequireAdminGuard).to(delete_anime)));
+        .route(web::patch().guard(admin_only).to(patch_anime))
+        .route(web::delete().guard(admin_only).to(delete_anime)));
 
     cfg.service(fetch_anime_details);
 }
