@@ -60,7 +60,7 @@ impl KError {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WithOID<T> {
     #[serde(rename = "_id")]
     #[serde(with = "hex_string_as_object_id")]
@@ -75,7 +75,7 @@ impl<T> WithOID<T> {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WithID<T> {
     pub id: String,
     #[serde(flatten)]
@@ -191,11 +191,14 @@ pub struct AnimeSeries {
     // TODO: added date and bar code ids
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimeSeriesPatch {
     #[serde(skip_serializing_if = "Option::is_none")]
     titles: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    poster: Option<CachedImage>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     manga: Option<MangaReleaseInfo>,
@@ -212,8 +215,8 @@ pub struct AnimeSeriesPatch {
 
 impl AnimeSeriesPatch {
     pub fn is_empty(&self) -> bool {
-        self.titles.is_none() && self.manga.is_none() && self.anime.is_none() &&
-            self.mapping.is_none()
+        self.titles.is_none() && self.poster.is_none() && self.manga.is_none()
+            && self.anime.is_none() && self.mapping.is_none()
     }
 
     pub fn seal(&mut self) -> Result<bson::Document, bson::ser::Error> {
@@ -256,6 +259,35 @@ impl From<WithID<AnimeSeries>> for AnimeSeriesSearchEntry {
             author: value.inner.manga.author,
             poster: value.inner.poster
         }
+    }
+}
+
+#[derive(Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AnimeSeriesSearchEntryPatch {
+    id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    titles: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    author: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    poster: Option<CachedImage>,
+}
+
+impl AnimeSeriesSearchEntryPatch {
+    pub fn from_patch(id: String, p: AnimeSeriesPatch) -> Option<Self> {
+        if p.titles.is_none() && p.manga.is_none() && p.poster.is_none() {
+            return None;
+        }
+        Some(Self {
+            id,
+            titles: p.titles,
+            author: p.manga.map(|manga| manga.author),
+            poster: p.poster
+        })
     }
 }
 

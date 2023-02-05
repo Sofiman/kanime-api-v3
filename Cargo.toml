@@ -17,7 +17,7 @@ toml = "0.5.10"
 url-escape = "0.1.1"
 anyhow = "1.0"
 meilisearch-sdk = "0.21"
-redis = { version = "0.22.2", default-features = false, features = ["tokio-comp"] }
+redis = { version = "0.22.2", features = ["tokio-comp"], default-features = false }
 
 [profile.release]
 lto = "thin"

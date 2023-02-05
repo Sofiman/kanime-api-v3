@@ -149,10 +149,20 @@ pub async fn fetch_anime_details(path: Path<String>, app: Data<AppState>) -> imp
         },
         Ok(None) => KError::not_found(),
         Err(e) => {
-            error!("Could not find anime:\n{e:?}");
+            error!("Could not find anime: {e}");
             KError::db_error()
         }
     }
+}
+
+async fn send_anime_to_meili(anime: AnimeSeriesSearchEntry, app: &AppState) -> Result<()> {
+    app.meilisearch.get_index(ANIMES_INDEX)
+        .await?
+        .add_or_replace(&[anime], Some(ANIME_PRIMARY_KEY))
+        .await?
+        .wait_for_completion(&app.meilisearch, None, None)
+        .await?;
+    Ok(())
 }
 
 async fn push_anime(payload: Json<AnimeSeries>, app: Data<AppState>) -> HttpResponse {
@@ -163,10 +173,14 @@ async fn push_anime(payload: Json<AnimeSeries>, app: Data<AppState>) -> HttpResp
         Ok(InsertOneResult { inserted_id, .. }) => {
             let inserted_id = inserted_id.as_object_id()
                 .expect("Value must be ObjectId").to_hex();
-            HttpResponse::Created().json(WithID::new(inserted_id, anime))
+            let anime = WithID::new(inserted_id, anime);
+            if let Err(e) = send_anime_to_meili(anime.clone().into(), &app).await {
+                warn!("Could not add pushed anime to meilisearch: {e}");
+            }
+            HttpResponse::Created().json(anime)
         },
         Err(e) => {
-            error!("Could not push anime to db: {e:?}");
+            error!("Could not push anime to db: {e}");
             KError::db_error()
         }
     }
@@ -176,9 +190,22 @@ async fn apply_anime_patch(anime_id: &ObjectId, app: &AppState, mut patch: Anime
     -> Result<bool> {
     let collection: mongodb::Collection<AnimeSeries> =
         app.mongodb.database(DB_NAME).collection(COLL_NAME);
-    let res = collection.update_one(doc! { "_id": anime_id }, doc! { "$set": patch.seal()? }, None)
-        .await.context("Updating anime with the specified ID")?;
-    Ok(res.matched_count >= 1)
+    let res = collection
+        .update_one(doc! { "_id": anime_id }, doc! { "$set": patch.seal()? }, None)
+        .await
+        .context("Updating anime with the specified ID")?;
+    if res.matched_count == 0 {
+        return Ok(false);
+    }
+
+    let patch = AnimeSeriesSearchEntryPatch::from_patch(anime_id.to_hex(), patch);
+    app.meilisearch.get_index(ANIMES_INDEX)
+        .await?
+        .add_or_update(&[patch], Some(ANIME_PRIMARY_KEY))
+        .await?
+        .wait_for_completion(&app.meilisearch, None, None)
+        .await?;
+    Ok(true)
 }
 
 async fn patch_anime(path: Path<String>, patch: Json<AnimeSeriesPatch>,
@@ -195,7 +222,7 @@ async fn patch_anime(path: Path<String>, patch: Json<AnimeSeriesPatch>,
         Ok(true) => HttpResponse::NoContent().finish(),
         Ok(false) => KError::not_found(),
         Err(e) => {
-            error!("Could not find anime:\n{e:?}");
+            error!("Could not find anime:\n{e}");
             KError::db_error()
         }
     }
@@ -223,6 +250,13 @@ async fn find_and_delete(anime_id: &ObjectId, app: &AppState) -> Result<Option<W
         .context("Find one and delete anime")
 }
 
+async fn delete_from_meili(anime_id: &str, app: &AppState) -> Result<()> {
+    app.meilisearch.get_index(ANIMES_INDEX).await?
+        .delete_document(anime_id).await?
+        .wait_for_completion(&app.meilisearch, None, None).await?;
+    Ok(())
+}
+
 async fn delete_anime(path: Path<String>, app: Data<AppState>) -> HttpResponse {
     let Some(anime_id) = to_oid(path.into_inner()) else {
         return KError::bad_request("The provided ID is not valid");
@@ -231,14 +265,17 @@ async fn delete_anime(path: Path<String>, app: Data<AppState>) -> HttpResponse {
         Ok(Some(anime)) => {
             let anime: WithID<AnimeSeries> = anime.into();
             create_backup(&anime)
-                .unwrap_or_else(|e| error!("Could not save backup file {anime:?}; error={e:?}"));
+                .unwrap_or_else(|e| error!("Could not save backup file `{anime:?}`: {e}"));
 
-            // TODO: Remove from meilisearch too
+            if let Err(e) = delete_from_meili(&anime.id, &app).await {
+                warn!("Could not remove deleted anime from meilisearch: {e}");
+            }
+
             HttpResponse::NoContent().finish()
         },
         Ok(None) => KError::not_found(),
         Err(e) => {
-            error!("Could not find anime:\n{e:?}");
+            error!("Could not find anime: {e}");
             KError::db_error()
         }
     }
