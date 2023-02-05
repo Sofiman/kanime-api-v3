@@ -187,8 +187,9 @@ pub struct AnimeSeries {
     manga: MangaReleaseInfo,
     anime: AnimeReleaseInfo,
     mapping: Vec<SeasonMapping>,
-    last_update: u64,
-    // TODO: added date and bar code ids
+    updated_on: u64,
+    created_on: u64,
+    // TODO: bar code ids
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -210,7 +211,7 @@ pub struct AnimeSeriesPatch {
     mapping: Option<Vec<SeasonMapping>>,
 
     #[serde(skip_deserializing)]
-    last_update: u64,
+    updated_on: u64,
 }
 
 impl AnimeSeriesPatch {
@@ -220,7 +221,7 @@ impl AnimeSeriesPatch {
     }
 
     pub fn seal(&mut self) -> Result<bson::Document, bson::ser::Error> {
-        self.last_update = SystemTime::now()
+        self.updated_on = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("The time can never be earlier than the Unix epoch")
             .as_millis() as u64;
@@ -337,6 +338,7 @@ pub fn get_anime() -> AnimeSeries {
                 pinned_note: None,
             }
         ],
-        last_update: now,
+        updated_on: now,
+        created_on: now,
     }
 }
