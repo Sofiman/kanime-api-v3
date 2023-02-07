@@ -7,21 +7,28 @@ mod middlewares;
 use config::*;
 use std::fs;
 use std::string::ToString;
-use actix_web::{web, App, HttpServer, middleware};
+use actix_web::{web, App, HttpServer, middleware, HttpRequest, HttpResponse, http::Method};
 use actix_web::middleware::{Condition, Logger};
-use types::AppState;
 use serde_json::json;
 use env_logger::Env;
 use log::{error, info, warn};
 use mongodb::Client;
 use gethostname::gethostname;
 
+use types::{AppState, KError};
 use middlewares::ip::CloudflareClientIp;
 use middlewares::auth::{KanimeAuth, pick_user_id};
 
 const MAJOR_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION_MAJOR");
 const MINOR_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION_MINOR");
 const PATCH_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION_PATCH");
+
+async fn default_endpoint(req: HttpRequest) -> HttpResponse {
+    match req.method() {
+        &Method::OPTIONS => HttpResponse::NoContent().finish(),
+        _ => KError::not_found()
+    }
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -35,10 +42,9 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or_else(|_| "kanime-api-v3".to_string());
     info!("Starting server as `{name}`");
 
-    info!(target: "mongodb", "Connecting to db...");
     let mongodb = Client::with_uri_str(config.mongodb.with_client_name(&name))
         .await.expect("Error: Failed to connect to MongoDB");
-    info!(target: "mongodb", "Successfully connected!");
+    info!(target: "mongodb", "MongoDB client setup done!");
 
     let redis = redis::Client::open(config.redis.to_string())
         .expect("Could not connect to redis");
@@ -58,6 +64,7 @@ async fn main() -> std::io::Result<()> {
     }
 
     info!(target: "http", "Listening on {}:{}", addr.0, addr.1);
+    let debug = config.debug.unwrap_or(false);
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(AppState {
@@ -75,18 +82,13 @@ async fn main() -> std::io::Result<()> {
                 .custom_request_replace("UID", pick_user_id)
                 .log_target("http"))
             .wrap(middleware::Compress::default())
-            .wrap(Condition::new(!config.debug.unwrap_or(false),
-                                 CloudflareClientIp))
+            .wrap(Condition::new(!debug, CloudflareClientIp))
             .wrap(KanimeAuth)
             .wrap(middleware::DefaultHeaders::new()
                 .add(("Access-Control-Allow-Origin", "*"))
-                .add(("Access-Control-Allow-Headers", "Content-Type"))
+                .add(("Access-Control-Allow-Headers", "Content-Type, Accept"))
                 .add(("Access-Control-Allow-Methods", "GET, POST, OPTIONS")))
-            .default_service(
-                web::route()
-                    .guard(actix_web::guard::Options())
-                    .to(actix_web::HttpResponse::NoContent),
-            )
+            .default_service(web::to(default_endpoint))
             .configure(routes::configure)
     })
     .bind(addr)?
