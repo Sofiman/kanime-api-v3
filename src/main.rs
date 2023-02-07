@@ -78,6 +78,15 @@ async fn main() -> std::io::Result<()> {
             .wrap(Condition::new(!config.debug.unwrap_or(false),
                                  CloudflareClientIp))
             .wrap(KanimeAuth)
+            .wrap(middleware::DefaultHeaders::new()
+                .add(("Access-Control-Allow-Origin", "*"))
+                .add(("Access-Control-Allow-Headers", "Content-Type"))
+                .add(("Access-Control-Allow-Methods", "GET, POST, OPTIONS")))
+            .default_service(
+                web::route()
+                    .guard(actix_web::guard::Options())
+                    .to(actix_web::HttpResponse::NoContent),
+            )
             .configure(routes::configure)
     })
     .bind(addr)?

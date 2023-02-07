@@ -32,14 +32,14 @@ impl KError {
     }
 
     pub fn not_found() -> HttpResponse {
-        HttpResponse::BadRequest().json(json!({
+        HttpResponse::NotFound().json(json!({
             "error": KErrorType::NotFound,
             "errorDescription": "Not Found",
         }))
     }
 
     pub fn internal_error(details: &'_ str) -> HttpResponse {
-        HttpResponse::BadRequest().json(json!({
+        HttpResponse::InternalServerError().json(json!({
             "error": KErrorType::InternalError,
             "errorDescription": details,
         }))
@@ -53,7 +53,7 @@ impl KError {
     }
 
     pub fn db_error() -> HttpResponse {
-        HttpResponse::BadRequest().json(json!({
+        HttpResponse::InternalServerError().json(json!({
             "error": KErrorType::InternalError,
             "errorDescription": "Could not retrieve data from database",
         }))
