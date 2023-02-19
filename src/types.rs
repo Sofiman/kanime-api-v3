@@ -1,4 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::PathBuf;
 use actix_web::HttpResponse;
 use mongodb::bson::{self, serde_helpers::hex_string_as_object_id};
 use serde::{Serialize, Deserialize};
@@ -10,6 +11,7 @@ pub struct AppState {
     pub mongodb: mongodb::Client,
     pub meilisearch: meilisearch_sdk::Client,
     pub redis: redis::Client,
+    pub cache_folder: PathBuf
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -192,12 +194,13 @@ pub struct AnimeSeries {
     // TODO: bar code ids
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimeSeriesPatch {
     #[serde(skip_serializing_if = "Option::is_none")]
     titles: Option<Vec<String>>,
 
+    #[serde(skip_deserializing)]
     #[serde(skip_serializing_if = "Option::is_none")]
     poster: Option<CachedImage>,
 
@@ -218,6 +221,10 @@ impl AnimeSeriesPatch {
     pub fn is_empty(&self) -> bool {
         self.titles.is_none() && self.poster.is_none() && self.manga.is_none()
             && self.anime.is_none() && self.mapping.is_none()
+    }
+
+    pub fn set_poster(&mut self, poster: CachedImage) {
+        self.poster = Some(poster);
     }
 
     pub fn seal(&mut self) -> Result<bson::Document, bson::ser::Error> {

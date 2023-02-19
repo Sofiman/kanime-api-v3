@@ -8,7 +8,7 @@ pub const DEFAULT_MONGO_PORT: u16 = 27017;
 pub const DEFAULT_REDIS_PORT: u16 = 6379;
 
 #[derive(Deserialize)]
-pub struct Config<'ha, 'moa, 'mob, 'moc, 'ra, 'rb, 'rc, 'msa, 'msb> {
+pub struct Config<'ha, 'moa, 'mob, 'moc, 'ra, 'rb, 'rc, 'msa, 'msb, 'cf> {
     pub debug: Option<bool>,
     #[serde(borrow)]
     pub http: HttpConfig<'ha>,
@@ -18,6 +18,8 @@ pub struct Config<'ha, 'moa, 'mob, 'moc, 'ra, 'rb, 'rc, 'msa, 'msb> {
     pub redis: RedisConfig<'ra, 'rb, 'rc>,
     #[serde(borrow)]
     pub meilisearch: MeilisearchConfig<'msa, 'msb>,
+    #[serde(borrow)]
+    pub cache_folder: &'cf str,
 }
 
 #[derive(Deserialize, Clone)]

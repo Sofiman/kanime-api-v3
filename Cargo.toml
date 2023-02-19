@@ -19,6 +19,9 @@ anyhow = "1.0"
 meilisearch-sdk = "0.21"
 redis = { version = "0.22.2", features = ["tokio-comp"], default-features = false }
 ril = { version = "0", features = ["png", "webp"] }
+mime = "0.3.16"
+actix-easy-multipart = "3.0.0"
+random-string = "1.0.0"
 
 [profile.release]
 lto = "thin"

@@ -5,7 +5,7 @@ mod routes;
 mod middlewares;
 
 use config::*;
-use std::fs;
+use std::{fs, path::Path};
 use std::string::ToString;
 use actix_web::{web, App, HttpServer, middleware, HttpRequest, HttpResponse, http::Method};
 use actix_web::middleware::{Condition, Logger};
@@ -63,6 +63,8 @@ async fn main() -> std::io::Result<()> {
         warn!(target: "meilisearch", "No signs of life...");
     }
 
+    let cache_folder = Path::new(config.cache_folder.clone()).to_path_buf();
+
     info!(target: "http", "Listening on {}:{}", addr.0, addr.1);
     let debug = config.debug.unwrap_or(false);
     HttpServer::new(move || {
@@ -77,6 +79,7 @@ async fn main() -> std::io::Result<()> {
                 mongodb: mongodb.clone(),
                 meilisearch: meilisearch.clone(),
                 redis: redis.clone(),
+                cache_folder: cache_folder.clone()
             }))
             .wrap(Logger::new("%a %r %{UID}xi » %s ~%Dms")
                 .custom_request_replace("UID", pick_user_id)
