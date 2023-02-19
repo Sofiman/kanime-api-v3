@@ -56,7 +56,7 @@ impl ToString for MongoDBConfig<'_, '_, '_> {
         use url_escape::{encode_fragment, encode_path};
         format!("mongodb://{}:{}@{}:{}/",
                 encode_fragment(self.username),
-                self.password,
+                encode_fragment(self.password),
                 encode_path(self.host),
                 self.port.unwrap_or(DEFAULT_MONGO_PORT))
     }
@@ -73,9 +73,9 @@ pub struct RedisConfig<'a, 'b, 'c> {
 impl ToString for RedisConfig<'_, '_, '_> {
     fn to_string(&self) -> String {
         use url_escape::{encode_fragment, encode_path};
-        format!("redis://{}:{}@{}:{}/",
+        format!("redis://{}:{}@{}:{}",
                 encode_fragment(self.username),
-                self.password,
+                encode_fragment(self.password),
                 encode_path(self.host),
                 self.port.unwrap_or(DEFAULT_REDIS_PORT))
     }

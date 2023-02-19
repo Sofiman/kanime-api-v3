@@ -186,8 +186,8 @@ async fn push_anime(payload: Json<AnimeSeries>, app: Data<AppState>) -> HttpResp
     let anime = payload.into_inner();
     let collection: mongodb::Collection<AnimeSeries> =
         app.mongodb.database(DB_NAME).collection(COLL_NAME);
-    //let key: String = random_string::generate(20, KEY_ALPHABET);
-    // TODO
+    let key: String = random_string::generate(20, KEY_ALPHABET);
+    info!("cache key: {key}");
     match collection.insert_one(&anime, None).await {
         Ok(InsertOneResult { inserted_id, .. }) => {
             let inserted_id = inserted_id.as_object_id()
@@ -211,13 +211,13 @@ struct AnimeMultipartPatch {
     poster: Option<Tempfile>,
 }
 
-const digit: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~";
+const DIGIT: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~";
 
 fn decode83(s: &str, start: usize, end: usize) -> usize {
     let mut value = 0;
     for c in s.chars().skip(start).take(end-start) {
         value *= 83;
-        value += digit.find(c).expect("invalid char");
+        value += DIGIT.find(c).expect("invalid char");
     }
     return value;
 }
@@ -242,8 +242,8 @@ fn export_poster<T: AsRef<AnimeSeries>>(recipient: T, from: &std::path::Path, fo
         let rgba: Vec<u8> = image.pixels().flatten().map(|p| [p.r, p.g, p.b, 255]).flatten().collect();
         blurhash::encode(4, 6, image.width(), image.height(), &rgba)
     };
-    let avgColor = decode83(&placeholder, 2, 6);
-    let avgColor = Rgb::new((avgColor >> 16) as u8, (avgColor >> 8) as u8, avgColor as u8);
+    let avg_color = decode83(&placeholder, 2, 6);
+    let avg_color = Rgb::new((avg_color >> 16) as u8, (avg_color >> 8) as u8, avg_color as u8);
 
     let medium = Font::open("assets/fonts/Poppins-SemiBold.ttf", 18.0)
         .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
@@ -263,7 +263,7 @@ fn export_poster<T: AsRef<AnimeSeries>>(recipient: T, from: &std::path::Path, fo
     let subtitle = TextLayout::new()
         .centered()
         .with_position(ANIME_POSTER_MEDIUM_WIDTH + empty_width / 2, ANIME_POSTER_PRESENTER_HEIGHT / 2 + title.height())
-        .with_basic_text(&medium, recipient.manga.author.as_str(), avgColor);
+        .with_basic_text(&medium, recipient.manga.author.as_str(), avg_color);
 
     presenter.paste(0, 0, &image);
     presenter.draw(&title);
