@@ -14,6 +14,7 @@ use crate::types::*;
 use crate::middlewares::auth::{Role, RequireRoleGuard};
 
 const GRAY: Rgb = Rgb::new(24, 24, 32);
+const ACCENT: Rgb = Rgb::new(241, 143, 243);
 const KEY_ALPHABET: &str = "ABCDEFGHIJKMNOPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789";
 
 const ANIME_POSTER_FULLRES_FOLDER: &str = "fullres";
@@ -185,6 +186,8 @@ async fn push_anime(payload: Json<AnimeSeries>, app: Data<AppState>) -> HttpResp
     let anime = payload.into_inner();
     let collection: mongodb::Collection<AnimeSeries> =
         app.mongodb.database(DB_NAME).collection(COLL_NAME);
+    //let key: String = random_string::generate(20, KEY_ALPHABET);
+    // TODO
     match collection.insert_one(&anime, None).await {
         Ok(InsertOneResult { inserted_id, .. }) => {
             let inserted_id = inserted_id.as_object_id()
@@ -208,8 +211,20 @@ struct AnimeMultipartPatch {
     poster: Option<Tempfile>,
 }
 
-fn export_poster(from: &std::path::Path, folder: &std::path::Path) -> Result<CachedImage> {
-    let key: String = random_string::generate(20, KEY_ALPHABET);
+const digit: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~";
+
+fn decode83(s: &str, start: usize, end: usize) -> usize {
+    let mut value = 0;
+    for c in s.chars().skip(start).take(end-start) {
+        value *= 83;
+        value += digit.find(c).expect("invalid char");
+    }
+    return value;
+}
+
+fn export_poster<T: AsRef<AnimeSeries>>(recipient: T, from: &std::path::Path, folder: &std::path::Path) -> Result<CachedImage> {
+    let recipient: &AnimeSeries = recipient.as_ref();
+    let key = recipient.poster.key().to_string();
     let file_name: String = format!("{key}.webp");
     let from = File::open(from)?;
     let mut image: Image<Rgb> = Image::from_reader(ImageFormat::WebP, from)
@@ -223,10 +238,16 @@ fn export_poster(from: &std::path::Path, folder: &std::path::Path) -> Result<Cac
     image.resize(ANIME_POSTER_MEDIUM_WIDTH, ANIME_POSTER_MEDIUM_HEIGHT, ResizeAlgorithm::Lanczos3);
     image.save(ImageFormat::WebP, folder.join(ANIME_POSTER_MEDIUM_FOLDER).join(file_name.clone()))
         .map_err(|e| anyhow!("Unable to save resized image: {e:?}"))?;
-    let placeholder = String::from("mEOB7d}tITDh9r?ZI=E1zD$zKKR:#lI.x[P.InR6pvTuxUIq-n,o");
-    // TODO: Generate blurhash
-    
-    let font = Font::open("assets/fonts/Poppins-Bold.ttf", 32.0)
+    let placeholder = {
+        let rgba: Vec<u8> = image.pixels().flatten().map(|p| [p.r, p.g, p.b, 255]).flatten().collect();
+        blurhash::encode(4, 6, image.width(), image.height(), &rgba)
+    };
+    let avgColor = decode83(&placeholder, 2, 6);
+    let avgColor = Rgb::new((avgColor >> 16) as u8, (avgColor >> 8) as u8, avgColor as u8);
+
+    let medium = Font::open("assets/fonts/Poppins-SemiBold.ttf", 18.0)
+        .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
+    let xbold = Font::open("assets/fonts/Poppins-ExtraBold.ttf", 32.0)
         .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
 
     // presenter image
@@ -237,10 +258,16 @@ fn export_poster(from: &std::path::Path, folder: &std::path::Path) -> Result<Cac
         .with_position(ANIME_POSTER_MEDIUM_WIDTH + empty_width / 2, ANIME_POSTER_PRESENTER_HEIGHT / 2)
         .with_width(empty_width)
         .with_wrap(WrapStyle::Word)
-        .with_basic_text(&font, "Testing a long text as the anime title placeholder", Rgb::white());
+        .with_basic_text(&xbold, recipient.titles[0].as_str(), Rgb::white());
+
+    let subtitle = TextLayout::new()
+        .centered()
+        .with_position(ANIME_POSTER_MEDIUM_WIDTH + empty_width / 2, ANIME_POSTER_PRESENTER_HEIGHT / 2 + title.height())
+        .with_basic_text(&medium, recipient.manga.author.as_str(), avgColor);
 
     presenter.paste(0, 0, &image);
     presenter.draw(&title);
+    presenter.draw(&subtitle);
 
     presenter.save(ImageFormat::WebP, folder.join(ANIME_POSTER_PRESENTER_FOLDER).join(file_name))
         .map_err(|e| anyhow!("Unable to save presenter image: {e:?}"))?;
@@ -284,7 +311,10 @@ async fn patch_anime(path: Path<String>, form: MultipartForm<AnimeMultipartPatch
     if let Some(poster) = form.poster {
         match poster.content_type.as_ref().map(AsRef::as_ref) {
             Some("image/webp") | Some("image/png") => {
-                match export_poster(poster.file.path(), &app.cache_folder) {
+                let Ok(Some(anime)) = find_anime(&anime_id, &app).await else {
+                    return KError::bad_request("The provided ID is not valid");
+                };
+                match export_poster(anime, poster.file.path(), &app.cache_folder) {
                     Ok(poster) => {
                         // TODO: delete previous files
                         patch.set_poster(poster);

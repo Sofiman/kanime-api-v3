@@ -77,6 +77,12 @@ impl<T> WithOID<T> {
     }
 }
 
+impl<T> AsRef<T> for WithOID<T> {
+    fn as_ref(&self) -> &T {
+        &self.inner
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WithID<T> {
     pub id: String,
@@ -104,22 +110,28 @@ impl<T> From<WithOID<T>> for WithID<T> {
     }
 }
 
+impl<T> AsRef<T> for WithID<T> {
+    fn as_ref(&self) -> &T {
+        &self.inner
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MangaReleaseInfo {
-    author: String,
-    volumes: u16,
-    chapters: u16,
-    release_year: u16,
+    pub author: String,
+    pub volumes: u16,
+    pub chapters: u16,
+    pub release_year: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimeReleaseInfo {
-    studios: Vec<String>,
-    seasons: u16,
-    episodes: u16,
-    release_year: u16,
+    pub studios: Vec<String>,
+    pub seasons: u16,
+    pub episodes: u16,
+    pub release_year: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -184,14 +196,13 @@ impl CachedImage {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimeSeries {
-    titles: Vec<String>,
-    poster: CachedImage,
-    manga: MangaReleaseInfo,
-    anime: AnimeReleaseInfo,
-    mapping: Vec<SeasonMapping>,
-    updated_on: u64,
-    created_on: u64,
-    // TODO: bar code ids
+    pub titles: Vec<String>,
+    pub poster: CachedImage,
+    pub manga: MangaReleaseInfo,
+    pub anime: AnimeReleaseInfo,
+    pub mapping: Vec<SeasonMapping>,
+    pub updated_on: u64,
+    pub created_on: u64,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
