@@ -18,3 +18,4 @@ target/
 ### Kanime
 config.toml
 /.idea/
+cache/
