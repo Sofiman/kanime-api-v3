@@ -8,18 +8,18 @@ pub const DEFAULT_MONGO_PORT: u16 = 27017;
 pub const DEFAULT_REDIS_PORT: u16 = 6379;
 
 #[derive(Deserialize)]
-pub struct Config<'ha, 'moa, 'mob, 'moc, 'ra, 'rb, 'rc, 'msa, 'msb, 'cf> {
+pub struct Config<'ha, 'moa, 'mob, 'moc, 'msa, 'msb, 'cf> {
     pub debug: Option<bool>,
+    #[serde(borrow)]
+    pub cache_folder: &'cf str,
+
     #[serde(borrow)]
     pub http: HttpConfig<'ha>,
     #[serde(borrow)]
     pub mongodb: MongoDBConfig<'moa, 'mob, 'moc>,
-    #[serde(borrow)]
-    pub redis: RedisConfig<'ra, 'rb, 'rc>,
+    pub redis: RedisConfig,
     #[serde(borrow)]
     pub meilisearch: MeilisearchConfig<'msa, 'msb>,
-    #[serde(borrow)]
-    pub cache_folder: &'cf str,
 }
 
 #[derive(Deserialize, Clone)]
@@ -62,22 +62,33 @@ impl ToString for MongoDBConfig<'_, '_, '_> {
     }
 }
 
-#[derive(Deserialize)]
-pub struct RedisConfig<'a, 'b, 'c> {
-    pub host: &'a str,
+#[derive(Deserialize, Clone)]
+pub struct RedisConfig {
+    pub host: String,
     pub port: Option<u16>,
-    pub username: &'b str,
-    pub password: &'c str,
+    pub username: String,
+    pub password: String
 }
 
-impl ToString for RedisConfig<'_, '_, '_> {
-    fn to_string(&self) -> String {
-        use url_escape::{encode_fragment, encode_path};
-        format!("redis://{}:{}@{}:{}",
-                encode_fragment(self.username),
-                encode_fragment(self.password),
-                encode_path(self.host),
-                self.port.unwrap_or(DEFAULT_REDIS_PORT))
+fn empty(s: String) -> Option<String> {
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+impl redis::IntoConnectionInfo for RedisConfig {
+    fn into_connection_info(self) -> redis::RedisResult<redis::ConnectionInfo> {
+        let port = self.port.unwrap_or(DEFAULT_REDIS_PORT);
+        Ok(redis::ConnectionInfo {
+            addr: redis::ConnectionAddr::Tcp(self.host, port),
+            redis: redis::RedisConnectionInfo {
+                db: 0,
+                username: empty(self.username),
+                password: empty(self.password),
+            }
+        })
     }
 }
 

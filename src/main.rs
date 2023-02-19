@@ -46,7 +46,7 @@ async fn main() -> std::io::Result<()> {
         .await.expect("Error: Failed to connect to MongoDB");
     info!(target: "mongodb", "MongoDB client setup done!");
 
-    let redis = redis::Client::open(config.redis.to_string())
+    let redis = redis::Client::open(config.redis.clone())
         .expect("Could not connect to redis");
     info!(target: "redis", "Redis client setup done!");
 
