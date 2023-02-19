@@ -16,7 +16,7 @@ RUN cargo build --release
 
 FROM debian:bullseye-slim
 
-RUN apt-get update && apt-get install -y libwebp
+RUN apt-get update && apt-get install -y libwebp6
 
 WORKDIR /usr/src/kanime-api-v3
 COPY --from=build /usr/src/kanime-api-v3/target/release/kanime-api-v3 /usr/src/kanime-api-v3/kanime-api-v3
