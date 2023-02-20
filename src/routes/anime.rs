@@ -13,8 +13,8 @@ use ril::prelude::*;
 use crate::types::*;
 use crate::middlewares::auth::{Role, RequireRoleGuard};
 
-const GRAY: Rgb = Rgb::new(24, 24, 32);
 const ACCENT: Rgb = Rgb::new(241, 143, 243);
+//const GRAY: Rgb = Rgb::new(163, 163, 176);
 const KEY_ALPHABET: &str = "ABCDEFGHIJKMNOPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789";
 
 const ANIME_POSTER_FULLRES_FOLDER: &str = "fullres";
@@ -23,9 +23,8 @@ const ANIME_POSTER_MEDIUM_FOLDER: &str = "310x468";
 const ANIME_POSTER_MEDIUM_WIDTH: u32 = 310;
 const ANIME_POSTER_MEDIUM_HEIGHT: u32 = 468;
 
-const ANIME_POSTER_PRESENTER_FOLDER: &str = "pre";
-const ANIME_POSTER_PRESENTER_WIDTH: u32 = ANIME_POSTER_MEDIUM_HEIGHT * 16 / 9;
-const ANIME_POSTER_PRESENTER_HEIGHT: u32 = ANIME_POSTER_MEDIUM_HEIGHT;
+const ANIME_PRESENTER_TEMPLATE: &str = "assets/templates/AnimePresenter.png";
+const ANIME_PRESENTER_FOLDER: &str = "pre";
 
 const DB_NAME: &str = "Kanime3";
 const COLL_NAME: &str = "animes";
@@ -233,6 +232,12 @@ fn export_poster<T: AsRef<AnimeSeries>>(recipient: T, from: &std::path::Path, fo
     // original poster
     image.save(ImageFormat::WebP, folder.join(ANIME_POSTER_FULLRES_FOLDER).join(file_name.clone()))
         .map_err(|e| anyhow!("Unable to save original image: {e:?}"))?;
+
+    let mut presenter: Image<Rgb> = Image::open(ANIME_PRESENTER_TEMPLATE)
+        .map_err(|e| anyhow!("Unable to open template image: {e:?}"))?;
+    let pasted_width = ANIME_POSTER_MEDIUM_WIDTH * presenter.height() / ANIME_POSTER_MEDIUM_HEIGHT;
+    image.resize(pasted_width, presenter.height(), ResizeAlgorithm::Lanczos3);
+    presenter.paste(0, 0, &image);
     
     // small poster
     image.resize(ANIME_POSTER_MEDIUM_WIDTH, ANIME_POSTER_MEDIUM_HEIGHT, ResizeAlgorithm::Lanczos3);
@@ -245,31 +250,50 @@ fn export_poster<T: AsRef<AnimeSeries>>(recipient: T, from: &std::path::Path, fo
     let avg_color = decode83(&placeholder, 2, 6);
     let avg_color = Rgb::new((avg_color >> 16) as u8, (avg_color >> 8) as u8, avg_color as u8);
 
-    let medium = Font::open("assets/fonts/Poppins-SemiBold.ttf", 18.0)
+    let bold = Font::open("assets/fonts/Poppins-Bold.ttf", 28.0)
         .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
-    let xbold = Font::open("assets/fonts/Poppins-ExtraBold.ttf", 32.0)
+    let xbold = Font::open("assets/fonts/Poppins-ExtraBold.ttf", 64.0)
         .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
 
-    // presenter image
-    let mut presenter: Image<Rgb> = Image::new(ANIME_POSTER_PRESENTER_WIDTH, ANIME_POSTER_PRESENTER_HEIGHT, GRAY);
-    let empty_width = ANIME_POSTER_PRESENTER_WIDTH - ANIME_POSTER_MEDIUM_WIDTH - 16;
-    let title = TextLayout::new()
-        .centered()
-        .with_position(ANIME_POSTER_MEDIUM_WIDTH + empty_width / 2, ANIME_POSTER_PRESENTER_HEIGHT / 2)
-        .with_width(empty_width)
+    presenter.draw(&TextLayout::new() // title
+        .with_position(452, 82)
+        .with_width(presenter.width() - pasted_width - 64)
         .with_wrap(WrapStyle::Word)
-        .with_basic_text(&xbold, recipient.titles[0].as_str(), Rgb::white());
+        .with_basic_text(&xbold, recipient.titles[0].as_str(), Rgb::white()));
 
-    let subtitle = TextLayout::new()
+    presenter.draw(&TextLayout::new() // year
         .centered()
-        .with_position(ANIME_POSTER_MEDIUM_WIDTH + empty_width / 2, ANIME_POSTER_PRESENTER_HEIGHT / 2 + title.height())
-        .with_basic_text(&medium, recipient.manga.author.as_str(), avg_color);
+        .with_position(452 + 64, 32 + 21 + 2)
+        .with_basic_text(&bold, recipient.anime.release_year.to_string(), ACCENT));
 
-    presenter.paste(0, 0, &image);
-    presenter.draw(&title);
-    presenter.draw(&subtitle);
+    let bold = Font::open("assets/fonts/Poppins-Bold.ttf", 32.0)
+        .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
 
-    presenter.save(ImageFormat::WebP, folder.join(ANIME_POSTER_PRESENTER_FOLDER).join(file_name))
+    presenter.draw(&TextLayout::new() // episode count
+        .with_position(532, 534 + 32 + 4)
+        .with_vertical_anchor(VerticalAnchor::Center)
+        .with_basic_text(&bold, recipient.anime.episodes.to_string(), avg_color)
+        .with_basic_text(&bold, " episodes", Rgb::white()));
+
+    presenter.draw(&TextLayout::new() // season count
+        .with_position(532, 454 + 32 + 4)
+        .with_vertical_anchor(VerticalAnchor::Center)
+        .with_basic_text(&bold, recipient.anime.seasons.to_string(), avg_color)
+        .with_basic_text(&bold, " seasons", Rgb::white()));
+
+    presenter.draw(&TextLayout::new() // chapter count
+        .with_position(532, 374 + 32 + 4)
+        .with_vertical_anchor(VerticalAnchor::Center)
+        .with_basic_text(&bold, recipient.manga.chapters.to_string(), avg_color)
+        .with_basic_text(&bold, " chapters", Rgb::white()));
+
+    presenter.draw(&TextLayout::new() // volume count
+        .with_position(532, 294 + 32 + 4)
+        .with_vertical_anchor(VerticalAnchor::Center)
+        .with_basic_text(&bold, recipient.manga.volumes.to_string(), avg_color)
+        .with_basic_text(&bold, " volumes", Rgb::white()));
+
+    presenter.save(ImageFormat::WebP, folder.join(ANIME_PRESENTER_FOLDER).join(file_name))
         .map_err(|e| anyhow!("Unable to save presenter image: {e:?}"))?;
 
     Ok(CachedImage::with_placeholder(key, placeholder))
