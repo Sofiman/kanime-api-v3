@@ -205,6 +205,39 @@ pub struct AnimeSeries {
     pub created_on: u64,
 }
 
+impl AsRef<AnimeSeries> for AnimeSeries {
+    fn as_ref(&self) -> &AnimeSeries {
+        &self
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AnimeSeriesCandidate {
+    pub titles: Vec<String>,
+    pub manga: MangaReleaseInfo,
+    pub anime: AnimeReleaseInfo,
+    pub mapping: Vec<SeasonMapping>,
+}
+
+impl AnimeSeriesCandidate {
+    pub fn into_anime(self, poster: CachedImage) -> AnimeSeries {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("The time can never be earlier than the Unix epoch")
+            .as_millis() as u64;
+        AnimeSeries {
+            titles: self.titles,
+            poster,
+            manga: self.manga,
+            anime: self.anime,
+            mapping: self.mapping,
+            updated_on: now,
+            created_on: now
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimeSeriesPatch {
@@ -232,6 +265,10 @@ impl AnimeSeriesPatch {
     pub fn is_empty(&self) -> bool {
         self.titles.is_none() && self.poster.is_none() && self.manga.is_none()
             && self.anime.is_none() && self.mapping.is_none()
+    }
+
+    pub fn has_presenter_changes(&self) -> bool {
+        self.titles.is_some() || self.manga.is_some() || self.anime.is_some()
     }
 
     pub fn set_poster(&mut self, poster: CachedImage) {

@@ -3,6 +3,7 @@ mod types;
 mod config;
 mod routes;
 mod middlewares;
+mod gen;
 
 use config::*;
 use std::{fs, path::Path};

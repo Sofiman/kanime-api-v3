@@ -8,23 +8,12 @@ use mongodb::{Client, options::FindOptions};
 use actix_easy_multipart::MultipartForm;
 use actix_easy_multipart::tempfile::Tempfile;
 use std::fs::File;
-use ril::prelude::*;
 
+use crate::gen::anime::*;
 use crate::types::*;
 use crate::middlewares::auth::{Role, RequireRoleGuard};
 
-const ACCENT: Rgb = Rgb::new(241, 143, 243);
-//const GRAY: Rgb = Rgb::new(163, 163, 176);
-const KEY_ALPHABET: &str = "ABCDEFGHIJKMNOPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789";
-
-const ANIME_POSTER_FULLRES_FOLDER: &str = "fullres";
-
-const ANIME_POSTER_MEDIUM_FOLDER: &str = "310x468";
-const ANIME_POSTER_MEDIUM_WIDTH: u32 = 310;
-const ANIME_POSTER_MEDIUM_HEIGHT: u32 = 468;
-
-const ANIME_PRESENTER_TEMPLATE: &str = "assets/templates/AnimePresenter.png";
-const ANIME_PRESENTER_FOLDER: &str = "pre";
+const CACHE_KEY_ALPHABET: &str = "ABCDEFGHIJKMNOPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789";
 
 const DB_NAME: &str = "Kanime3";
 const COLL_NAME: &str = "animes";
@@ -181,12 +170,46 @@ async fn send_anime_to_meili(anime: AnimeSeriesSearchEntry, app: &AppState) -> R
     Ok(())
 }
 
-async fn push_anime(payload: Json<AnimeSeries>, app: Data<AppState>) -> HttpResponse {
-    let anime = payload.into_inner();
+#[derive(MultipartForm)]
+struct AnimeMultipartCandidate {
+    candidate: actix_easy_multipart::json::Json<AnimeSeriesCandidate>,
+    poster: Tempfile,
+}
+
+async fn push_anime(form: MultipartForm<AnimeMultipartCandidate>, app: Data<AppState>) -> HttpResponse {
+    let form = form.into_inner();
+    let mut anime = {
+        let key: String = random_string::generate(20, CACHE_KEY_ALPHABET);
+        let candidate = form.candidate.into_inner();
+        candidate.into_anime(CachedImage::new(key))
+    };
+
+    let poster = form.poster;
+    match poster.content_type.as_ref().map(AsRef::as_ref) {
+        Some("image/webp") | Some("image/png") => {
+            match export_poster(anime.poster.key().to_string(), poster.file.path(), &app.cache_folder) {
+                Ok(ci) => {
+                    info!("Successfully generated image set for pushed anime");
+                    anime.poster = ci;
+                    export_presenter(&anime, poster.file.path(), &app.cache_folder)
+                        .unwrap_or_else(|_| warn!("Could not generate presenter"));
+                },
+                Err(e) => {
+                    error!("Could not export poster: {e:?}");
+                    poster.file.close().unwrap_or_else(|_| warn!("Could not delete temp file"));
+                    return KError::internal_error("Could not generate image set")
+                }
+            }
+            poster.file.close().unwrap_or_else(|_| warn!("Could not delete temp file"));
+        },
+        _ => {
+            poster.file.close().unwrap_or_else(|_| warn!("Could not delete temp file"));
+            return KError::bad_request("Only webp or png images are supported")
+        }
+    }
+
     let collection: mongodb::Collection<AnimeSeries> =
         app.mongodb.database(DB_NAME).collection(COLL_NAME);
-    let key: String = random_string::generate(20, KEY_ALPHABET);
-    info!("cache key: {key}");
     match collection.insert_one(&anime, None).await {
         Ok(InsertOneResult { inserted_id, .. }) => {
             let inserted_id = inserted_id.as_object_id()
@@ -198,6 +221,7 @@ async fn push_anime(payload: Json<AnimeSeries>, app: Data<AppState>) -> HttpResp
             HttpResponse::Created().json(anime)
         },
         Err(e) => {
+            // TODO: delete generated poster files
             error!("Could not push anime to db: {e:?}");
             KError::db_error()
         }
@@ -208,95 +232,6 @@ async fn push_anime(payload: Json<AnimeSeries>, app: Data<AppState>) -> HttpResp
 struct AnimeMultipartPatch {
     patch: actix_easy_multipart::json::Json<AnimeSeriesPatch>,
     poster: Option<Tempfile>,
-}
-
-const DIGIT: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~";
-
-fn decode83(s: &str, start: usize, end: usize) -> usize {
-    let mut value = 0;
-    for c in s.chars().skip(start).take(end-start) {
-        value *= 83;
-        value += DIGIT.find(c).expect("invalid char");
-    }
-    return value;
-}
-
-fn export_poster<T: AsRef<AnimeSeries>>(recipient: T, from: &std::path::Path, folder: &std::path::Path) -> Result<CachedImage> {
-    let recipient: &AnimeSeries = recipient.as_ref();
-    let key = recipient.poster.key().to_string();
-    let file_name: String = format!("{key}.webp");
-    let from = File::open(from)?;
-    let mut image: Image<Rgb> = Image::from_reader(ImageFormat::WebP, from)
-        .map_err(|e| anyhow!("Unable to open uploaded file: {e:?}"))?;
-
-    // original poster
-    image.save(ImageFormat::WebP, folder.join(ANIME_POSTER_FULLRES_FOLDER).join(file_name.clone()))
-        .map_err(|e| anyhow!("Unable to save original image: {e:?}"))?;
-
-    let mut presenter: Image<Rgb> = Image::open(ANIME_PRESENTER_TEMPLATE)
-        .map_err(|e| anyhow!("Unable to open template image: {e:?}"))?;
-    let pasted_width = ANIME_POSTER_MEDIUM_WIDTH * presenter.height() / ANIME_POSTER_MEDIUM_HEIGHT;
-    image.resize(pasted_width, presenter.height(), ResizeAlgorithm::Lanczos3);
-    presenter.paste(0, 0, &image);
-    
-    // small poster
-    image.resize(ANIME_POSTER_MEDIUM_WIDTH, ANIME_POSTER_MEDIUM_HEIGHT, ResizeAlgorithm::Lanczos3);
-    image.save(ImageFormat::WebP, folder.join(ANIME_POSTER_MEDIUM_FOLDER).join(file_name.clone()))
-        .map_err(|e| anyhow!("Unable to save resized image: {e:?}"))?;
-    let placeholder = {
-        let rgba: Vec<u8> = image.pixels().flatten().map(|p| [p.r, p.g, p.b, 255]).flatten().collect();
-        blurhash::encode(4, 6, image.width(), image.height(), &rgba)
-    };
-    let avg_color = decode83(&placeholder, 2, 6);
-    let avg_color = Rgb::new((avg_color >> 16) as u8, (avg_color >> 8) as u8, avg_color as u8);
-
-    let bold = Font::open("assets/fonts/Poppins-Bold.ttf", 28.0)
-        .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
-    let xbold = Font::open("assets/fonts/Poppins-ExtraBold.ttf", 64.0)
-        .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
-
-    presenter.draw(&TextLayout::new() // title
-        .with_position(452, 82)
-        .with_width(presenter.width() - pasted_width - 64)
-        .with_wrap(WrapStyle::Word)
-        .with_basic_text(&xbold, recipient.titles[0].as_str(), Rgb::white()));
-
-    presenter.draw(&TextLayout::new() // year
-        .centered()
-        .with_position(452 + 64, 32 + 21 + 2)
-        .with_basic_text(&bold, recipient.anime.release_year.to_string(), ACCENT));
-
-    let bold = Font::open("assets/fonts/Poppins-Bold.ttf", 32.0)
-        .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
-
-    presenter.draw(&TextLayout::new() // episode count
-        .with_position(532, 534 + 32 + 4)
-        .with_vertical_anchor(VerticalAnchor::Center)
-        .with_basic_text(&bold, recipient.anime.episodes.to_string(), avg_color)
-        .with_basic_text(&bold, " episodes", Rgb::white()));
-
-    presenter.draw(&TextLayout::new() // season count
-        .with_position(532, 454 + 32 + 4)
-        .with_vertical_anchor(VerticalAnchor::Center)
-        .with_basic_text(&bold, recipient.anime.seasons.to_string(), avg_color)
-        .with_basic_text(&bold, " seasons", Rgb::white()));
-
-    presenter.draw(&TextLayout::new() // chapter count
-        .with_position(532, 374 + 32 + 4)
-        .with_vertical_anchor(VerticalAnchor::Center)
-        .with_basic_text(&bold, recipient.manga.chapters.to_string(), avg_color)
-        .with_basic_text(&bold, " chapters", Rgb::white()));
-
-    presenter.draw(&TextLayout::new() // volume count
-        .with_position(532, 294 + 32 + 4)
-        .with_vertical_anchor(VerticalAnchor::Center)
-        .with_basic_text(&bold, recipient.manga.volumes.to_string(), avg_color)
-        .with_basic_text(&bold, " volumes", Rgb::white()));
-
-    presenter.save(ImageFormat::WebP, folder.join(ANIME_PRESENTER_FOLDER).join(file_name))
-        .map_err(|e| anyhow!("Unable to save presenter image: {e:?}"))?;
-
-    Ok(CachedImage::with_placeholder(key, placeholder))
 }
 
 async fn apply_anime_patch(anime_id: &ObjectId, app: &AppState, mut patch: AnimeSeriesPatch)
@@ -336,13 +271,16 @@ async fn patch_anime(path: Path<String>, form: MultipartForm<AnimeMultipartPatch
         match poster.content_type.as_ref().map(AsRef::as_ref) {
             Some("image/webp") | Some("image/png") => {
                 let Ok(Some(anime)) = find_anime(&anime_id, &app).await else {
+                    poster.file.close().unwrap_or_else(|_| warn!("Could not delete temp file"));
                     return KError::bad_request("The provided ID is not valid");
                 };
-                match export_poster(anime, poster.file.path(), &app.cache_folder) {
-                    Ok(poster) => {
-                        // TODO: delete previous files
-                        patch.set_poster(poster);
+                let key = anime.as_ref().poster.key().to_string();
+                match export_poster(key, poster.file.path(), &app.cache_folder) {
+                    Ok(ci) => {
                         info!("Successfully generated image set for `{}`", anime_id.to_hex());
+                        patch.set_poster(ci);
+                        export_presenter(&anime, poster.file.path(), &app.cache_folder)
+                            .unwrap_or_else(|_| warn!("Could not generate presenter"));
                     },
                     Err(e) => {
                         error!("Could not export poster: {e:?}");
@@ -358,6 +296,16 @@ async fn patch_anime(path: Path<String>, form: MultipartForm<AnimeMultipartPatch
                 poster.file.close().unwrap_or_else(|_| warn!("Could not delete temp file"));
                 return KError::bad_request("Only webp or png images are supported")
             }
+        }
+    } else if patch.has_presenter_changes() {
+        let Ok(Some(anime)) = find_anime(&anime_id, &app).await else {
+            return KError::bad_request("The provided ID is not valid");
+        };
+        let anime = anime.into_inner();
+        let poster = get_fullres_path(anime.poster.key(), &app.cache_folder);
+        match export_presenter(anime, &poster, &app.cache_folder) {
+            Ok(()) => info!("Successfully updated presenter for `{}`", anime_id.to_hex()),
+            Err(e) => warn!("Could not generate presenter image: {e:?}")
         }
     }
 
