@@ -1,5 +1,7 @@
 use anyhow::{Result, anyhow};
 use std::{fs::File, path::{Path, PathBuf}};
+use std::time::Instant;
+use std::io::{BufReader, BufWriter};
 use ril::prelude::*;
 use crate::types::*;
 
@@ -34,24 +36,20 @@ pub fn get_fullres_path(key: &str, folder: &Path) -> PathBuf {
 
 pub fn export_poster(cache_key: String, from: &Path, folder: &Path) -> Result<CachedImage> {
     let file_name: String = format!("{cache_key}.webp");
-    let from = File::open(from)?;
-    let mut image: Image<Rgb> = Image::from_reader(ImageFormat::WebP, from)
+    let mut image: Image<Rgb> = Image::from_reader(ImageFormat::WebP, BufReader::new(File::open(from)?))
         .map_err(|e| anyhow!("Unable to open uploaded file: {e:?}"))?;
 
     // original poster
-    image.save(ImageFormat::WebP, folder.join(ANIME_POSTER_FULLRES_FOLDER).join(file_name.clone()))
+    let output = folder.join(ANIME_POSTER_FULLRES_FOLDER).join(file_name.clone());
+    image.encode(ImageFormat::WebP, &mut BufWriter::new(File::create(output)?))
         .map_err(|e| anyhow!("Unable to save original image: {e:?}"))?;
 
-    let mut presenter: Image<Rgb> = Image::open(ANIME_PRESENTER_TEMPLATE)
-        .map_err(|e| anyhow!("Unable to open template image: {e:?}"))?;
-    let pasted_width = ANIME_POSTER_MEDIUM_WIDTH * presenter.height() / ANIME_POSTER_MEDIUM_HEIGHT;
-    image.resize(pasted_width, presenter.height(), ResizeAlgorithm::Lanczos3);
-    presenter.paste(0, 0, &image);
-    
     // small poster
     image.resize(ANIME_POSTER_MEDIUM_WIDTH, ANIME_POSTER_MEDIUM_HEIGHT, ResizeAlgorithm::Lanczos3);
-    image.save(ImageFormat::WebP, folder.join(ANIME_POSTER_MEDIUM_FOLDER).join(file_name.clone()))
+    let output = folder.join(ANIME_POSTER_MEDIUM_FOLDER).join(file_name);
+    image.encode(ImageFormat::WebP, &mut BufWriter::new(File::create(output)?))
         .map_err(|e| anyhow!("Unable to save resized image: {e:?}"))?;
+
     let placeholder = {
         let rgba: Vec<u8> = image.pixels().flatten().map(|p| [p.r, p.g, p.b, 255]).flatten().collect();
         blurhash::encode(ANIME_PLACEHOLDER_COMPONENTS_X, ANIME_PLACEHOLDER_COMPONENTS_Y, 
@@ -75,7 +73,8 @@ pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, from: &Path, folder
     let (mut presenter, poster_width) = {
         let mut template: Image<Rgb> = Image::open(ANIME_PRESENTER_TEMPLATE)
             .map_err(|e| anyhow!("Unable to open template image: {e:?}"))?;
-        let mut poster: Image<Rgb> = Image::from_reader(ImageFormat::WebP, File::open(from)?)
+        let input = BufReader::new(File::open(from)?);
+        let mut poster: Image<Rgb> = Image::from_reader(ImageFormat::WebP, input)
             .map_err(|e| anyhow!("Unable to open uploaded file: {e:?}"))?;
 
         let poster_width = ANIME_POSTER_MEDIUM_WIDTH * template.height() / ANIME_POSTER_MEDIUM_HEIGHT;
@@ -128,7 +127,8 @@ pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, from: &Path, folder
         .with_basic_text(&bold, recipient.manga.volumes.to_string(), avg_color)
         .with_basic_text(&bold, " volumes", Rgb::white()));
 
-    presenter.save(ImageFormat::WebP, folder.join(ANIME_PRESENTER_FOLDER).join(file_name))
+    let output = folder.join(ANIME_PRESENTER_FOLDER).join(file_name);
+    presenter.encode(ImageFormat::WebP, &mut BufWriter::new(File::create(output)?))
         .map_err(|e| anyhow!("Unable to save presenter image: {e:?}"))?;
 
     Ok(())

@@ -1,6 +1,6 @@
 [package]
 name = "kanime-api-v3"
-version = "3.0.2"
+version = "3.0.3"
 edition = "2021"
 description = "Kanime API V3 Server"
 publish = false
@@ -19,7 +19,6 @@ anyhow = "1.0"
 meilisearch-sdk = "0.21"
 redis = { version = "0.22.2", features = ["tokio-comp"], default-features = false }
 ril = { version = "0", features = ["png", "webp"] }
-mime = "0.3.16"
 actix-easy-multipart = "3.0.0"
 random-string = "1.0.0"
 blurhash = "0.1.1"
