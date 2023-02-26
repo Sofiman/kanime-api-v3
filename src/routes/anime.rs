@@ -189,9 +189,8 @@ async fn push_anime(form: MultipartForm<AnimeMultipartCandidate>, app: Data<AppS
         Some("image/webp") | Some("image/png") => {
             match export_poster(anime.poster.key().to_string(), poster.file.path(), &app.cache_folder) {
                 Ok(ci) => {
-                    info!("Successfully generated image set for pushed anime");
                     anime.poster = ci;
-                    export_presenter(&anime, poster.file.path(), &app.cache_folder)
+                    export_presenter(&anime, &app.cache_folder)
                         .unwrap_or_else(|_| warn!("Could not generate presenter"));
                 },
                 Err(e) => {
@@ -234,6 +233,16 @@ struct AnimeMultipartPatch {
     poster: Option<Tempfile>,
 }
 
+async fn apply_anime_search_entry_patch(app: &AppState, patch: AnimeSeriesSearchEntryPatch) -> Result<()> {
+    app.meilisearch.get_index(ANIMES_INDEX)
+        .await?
+        .add_or_update(&[patch], Some(ANIME_PRIMARY_KEY))
+        .await?
+        .wait_for_completion(&app.meilisearch, None, None)
+        .await?;
+    Ok(())
+}
+
 async fn apply_anime_patch(anime_id: &ObjectId, app: &AppState, mut patch: AnimeSeriesPatch)
     -> Result<bool> {
     let collection: mongodb::Collection<AnimeSeries> =
@@ -245,14 +254,10 @@ async fn apply_anime_patch(anime_id: &ObjectId, app: &AppState, mut patch: Anime
     if res.matched_count == 0 {
         return Ok(false);
     }
-
-    let patch = AnimeSeriesSearchEntryPatch::from_patch(anime_id.to_hex(), patch);
-    app.meilisearch.get_index(ANIMES_INDEX)
-        .await?
-        .add_or_update(&[patch], Some(ANIME_PRIMARY_KEY))
-        .await?
-        .wait_for_completion(&app.meilisearch, None, None)
-        .await?;
+    if let Some(patch) = AnimeSeriesSearchEntryPatch::from_patch(anime_id.to_hex(), patch) {
+        apply_anime_search_entry_patch(app, patch).await
+            .unwrap_or_else(|e| warn!("Could not update meilisearch index: {e:?}"));
+    }
     Ok(true)
 }
 
@@ -277,9 +282,8 @@ async fn patch_anime(path: Path<String>, form: MultipartForm<AnimeMultipartPatch
                 let key = anime.as_ref().poster.key().to_string();
                 match export_poster(key, poster.file.path(), &app.cache_folder) {
                     Ok(ci) => {
-                        info!("Successfully generated image set for `{}`", anime_id.to_hex());
                         patch.set_poster(ci);
-                        export_presenter(&anime, poster.file.path(), &app.cache_folder)
+                        export_presenter(&anime, &app.cache_folder)
                             .unwrap_or_else(|_| warn!("Could not generate presenter"));
                     },
                     Err(e) => {
@@ -301,9 +305,7 @@ async fn patch_anime(path: Path<String>, form: MultipartForm<AnimeMultipartPatch
         let Ok(Some(anime)) = find_anime(&anime_id, &app).await else {
             return KError::bad_request("The provided ID is not valid");
         };
-        let anime = anime.into_inner();
-        let poster = get_fullres_path(anime.poster.key(), &app.cache_folder);
-        match export_presenter(anime, &poster, &app.cache_folder) {
+        match export_presenter(anime, &app.cache_folder) {
             Ok(()) => info!("Successfully updated presenter for `{}`", anime_id.to_hex()),
             Err(e) => warn!("Could not generate presenter image: {e:?}")
         }

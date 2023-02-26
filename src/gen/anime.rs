@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
-use std::{fs::File, path::{Path, PathBuf}};
+use std::{fs::File, path::{Path, PathBuf}, io::{BufReader, BufWriter}};
 use std::time::Instant;
-use std::io::{BufReader, BufWriter};
+use log::info;
 use ril::prelude::*;
 use crate::types::*;
 
@@ -15,6 +15,7 @@ const ANIME_POSTER_MEDIUM_WIDTH: u32 = 310;
 const ANIME_POSTER_MEDIUM_HEIGHT: u32 = 468;
 
 const ANIME_PRESENTER_TEMPLATE: &str = "assets/templates/AnimePresenter.png";
+const ANIME_PRESENTER_TEMPLATE_FORMAT: ImageFormat = ImageFormat::Png;
 const ANIME_PRESENTER_FOLDER: &str = "pre";
 
 const ANIME_PLACEHOLDER_COMPONENTS_X: u32 = 4;
@@ -30,11 +31,13 @@ fn decode83(s: &str, start: usize, end: usize) -> usize {
     return value;
 }
 
+#[allow(dead_code)]
 pub fn get_fullres_path(key: &str, folder: &Path) -> PathBuf {
     folder.join(ANIME_POSTER_FULLRES_FOLDER).join(format!("{key}.webp"))
 }
 
 pub fn export_poster(cache_key: String, from: &Path, folder: &Path) -> Result<CachedImage> {
+    let t = Instant::now();
     let file_name: String = format!("{cache_key}.webp");
     let mut image: Image<Rgb> = Image::from_reader(ImageFormat::WebP, BufReader::new(File::open(from)?))
         .map_err(|e| anyhow!("Unable to open uploaded file: {e:?}"))?;
@@ -55,13 +58,15 @@ pub fn export_poster(cache_key: String, from: &Path, folder: &Path) -> Result<Ca
         blurhash::encode(ANIME_PLACEHOLDER_COMPONENTS_X, ANIME_PLACEHOLDER_COMPONENTS_Y, 
             image.width(), image.height(), &rgba)
     };
+
+    info!("Successfully generated poster images in {:?}", t.elapsed());
     Ok(CachedImage::with_placeholder(cache_key, placeholder))
 }
 
-pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, from: &Path, folder: &Path) -> Result<()> {
+pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, folder: &Path) -> Result<()> {
+    let t = Instant::now();
     let recipient: &AnimeSeries = recipient.as_ref();
-    let key = recipient.poster.key().to_string();
-    let file_name: String = format!("{key}.webp");
+    let file_name: String = format!("{}.webp", recipient.poster.key());
     let avg_color = match recipient.poster.placeholder() {
         Some(blurhash) => {
             let avg_color = decode83(blurhash, 2, 6);
@@ -71,8 +76,11 @@ pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, from: &Path, folder
     };
 
     let (mut presenter, poster_width) = {
-        let mut template: Image<Rgb> = Image::open(ANIME_PRESENTER_TEMPLATE)
+        let input = BufReader::new(File::open(ANIME_PRESENTER_TEMPLATE)?);
+        let mut template: Image<Rgb> = Image::from_reader(ANIME_PRESENTER_TEMPLATE_FORMAT, input)
             .map_err(|e| anyhow!("Unable to open template image: {e:?}"))?;
+
+        let from = folder.join(ANIME_POSTER_FULLRES_FOLDER).join(file_name.clone());
         let input = BufReader::new(File::open(from)?);
         let mut poster: Image<Rgb> = Image::from_reader(ImageFormat::WebP, input)
             .map_err(|e| anyhow!("Unable to open uploaded file: {e:?}"))?;
@@ -131,5 +139,6 @@ pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, from: &Path, folder
     presenter.encode(ImageFormat::WebP, &mut BufWriter::new(File::create(output)?))
         .map_err(|e| anyhow!("Unable to save presenter image: {e:?}"))?;
 
+    info!("Successfully generated presenter image in {:?}", t.elapsed());
     Ok(())
 }
