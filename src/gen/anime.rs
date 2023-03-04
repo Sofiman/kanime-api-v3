@@ -4,6 +4,7 @@ use std::time::Instant;
 use log::info;
 use ril::prelude::*;
 use crate::types::*;
+use fast_blurhash::{compute_dct_iter, base83::decode};
 
 const ACCENT_COLOR: Rgb = Rgb::new(241, 143, 243);
 //const GRAY: Rgb = Rgb::new(163, 163, 176);
@@ -18,18 +19,8 @@ const ANIME_PRESENTER_TEMPLATE: &str = "assets/templates/AnimePresenter.png";
 const ANIME_PRESENTER_TEMPLATE_FORMAT: ImageFormat = ImageFormat::Png;
 const ANIME_PRESENTER_FOLDER: &str = "pre";
 
-const ANIME_PLACEHOLDER_COMPONENTS_X: u32 = 4;
-const ANIME_PLACEHOLDER_COMPONENTS_Y: u32 = 7;
-const DIGIT: &str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~";
-
-fn decode83(s: &str, start: usize, end: usize) -> usize {
-    let mut value = 0;
-    for c in s.chars().skip(start).take(end-start) {
-        value *= 83;
-        value += DIGIT.find(c).expect("invalid char");
-    }
-    return value;
-}
+const ANIME_PLACEHOLDER_COMPONENTS_X: usize = 4;
+const ANIME_PLACEHOLDER_COMPONENTS_Y: usize = 7;
 
 #[allow(dead_code)]
 pub fn get_fullres_path(key: &str, folder: &Path) -> PathBuf {
@@ -53,11 +44,10 @@ pub fn export_poster(cache_key: String, from: &Path, folder: &Path) -> Result<Ca
     image.encode(ImageFormat::WebP, &mut BufWriter::new(File::create(output)?))
         .map_err(|e| anyhow!("Unable to save resized image: {e:?}"))?;
 
-    let placeholder = {
-        let rgba: Vec<u8> = image.pixels().flatten().map(|p| [p.r, p.g, p.b, 255]).flatten().collect();
-        blurhash::encode(ANIME_PLACEHOLDER_COMPONENTS_X, ANIME_PLACEHOLDER_COMPONENTS_Y, 
-            image.width(), image.height(), &rgba)
-    };
+    let placeholder = compute_dct_iter(image.data.iter().map(|p| [p.r, p.g, p.b]),
+        image.width() as usize, image.height() as usize,
+        ANIME_PLACEHOLDER_COMPONENTS_X, ANIME_PLACEHOLDER_COMPONENTS_Y)
+        .into_blurhash();
 
     info!("Successfully generated poster images in {:?}", t.elapsed());
     Ok(CachedImage::with_placeholder(cache_key, placeholder))
@@ -67,12 +57,11 @@ pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, folder: &Path) -> R
     let t = Instant::now();
     let recipient: &AnimeSeries = recipient.as_ref();
     let file_name: String = format!("{}.webp", recipient.poster.key());
-    let avg_color = match recipient.poster.placeholder() {
-        Some(blurhash) => {
-            let avg_color = decode83(blurhash, 2, 6);
+    let avg_color = match recipient.poster.placeholder().map(|bh| decode(&bh[2..6])) {
+        Some(Ok(avg_color)) => {
             Rgb::new((avg_color >> 16) as u8, (avg_color >> 8) as u8, avg_color as u8)
         },
-        None => ACCENT_COLOR
+        _ => ACCENT_COLOR
     };
 
     let (mut presenter, poster_width) = {

@@ -353,12 +353,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "blurhash"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8671e4c8bf59f8784aa27fe4c8e152f2a45dfeb91a52d114e5d104a451494bb4"
-
-[[package]]
 name = "brotli"
 version = "3.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -830,6 +824,12 @@ name = "event-listener"
 version = "2.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
+
+[[package]]
+name = "fast-blurhash"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d7ef65913351fef79386a55913e43919c7121411aba57502821936e8669485d"
 
 [[package]]
 name = "fast_image_resize"
@@ -1310,8 +1310,8 @@ dependencies = [
  "actix-easy-multipart",
  "actix-web",
  "anyhow",
- "blurhash",
  "env_logger",
+ "fast-blurhash",
  "gethostname",
  "log",
  "meilisearch-sdk",

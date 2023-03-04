@@ -21,7 +21,7 @@ redis = { version = "0.22.2", features = ["tokio-comp"], default-features = fals
 ril = { version = "0", features = ["png", "webp"] }
 actix-easy-multipart = "3.0.0"
 random-string = "1.0.0"
-blurhash = "0.1.1"
+fast-blurhash = "1.0.0"
 
 [profile.release]
 lto = "thin"

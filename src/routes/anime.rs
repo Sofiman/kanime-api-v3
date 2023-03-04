@@ -118,6 +118,7 @@ async fn search_animes(query: SearchQuery, app: Data<AppState>) -> HttpResponse 
         Ok(docs) => {
             let docs: Vec<AnimeSeriesSearchEntry> = docs.hits.into_iter()
                 .map(|r| r.result).collect();
+            info!("Found {} results for `{}`", docs.len(), query.query);
             HttpResponse::Ok().json(docs)
         }
         Err(e) => {
