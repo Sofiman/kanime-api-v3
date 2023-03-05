@@ -280,10 +280,12 @@ async fn patch_anime(path: Path<String>, form: MultipartForm<AnimeMultipartPatch
                     poster.file.close().unwrap_or_else(|_| warn!("Could not delete temp file"));
                     return KError::bad_request("The provided ID is not valid");
                 };
-                let key = anime.as_ref().poster.key().to_string();
+                let mut anime = anime.into_inner();
+                let key = anime.poster.key().to_string();
                 match export_poster(key, poster.file.path(), &app.cache_folder) {
                     Ok(ci) => {
                         patch.set_poster(ci);
+                        patch.clone().apply(&mut anime);
                         export_presenter(&anime, &app.cache_folder)
                             .unwrap_or_else(|_| warn!("Could not generate presenter"));
                     },
@@ -306,6 +308,8 @@ async fn patch_anime(path: Path<String>, form: MultipartForm<AnimeMultipartPatch
         let Ok(Some(anime)) = find_anime(&anime_id, &app).await else {
             return KError::bad_request("The provided ID is not valid");
         };
+        let mut anime = anime.into_inner();
+        patch.clone().apply(&mut anime);
         match export_presenter(anime, &app.cache_folder) {
             Ok(()) => info!("Successfully updated presenter for `{}`", anime_id.to_hex()),
             Err(e) => warn!("Could not generate presenter image: {e:?}")

@@ -275,6 +275,36 @@ impl AnimeSeriesPatch {
         self.poster = Some(poster);
     }
 
+    pub fn apply(self, original: &mut AnimeSeries) {
+        let mut updated = false;
+        if let Some(titles) = self.titles {
+            original.titles = titles;
+            updated = true;
+        }
+        if let Some(poster) = self.poster {
+            original.poster = poster;
+            updated = true;
+        }
+        if let Some(manga) = self.manga {
+            original.manga = manga;
+            updated = true;
+        }
+        if let Some(anime) = self.anime {
+            original.anime = anime;
+            updated = true;
+        }
+        if let Some(mapping) = self.mapping {
+            original.mapping = mapping;
+            updated = true;
+        }
+        if updated {
+            original.updated_on = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("The time can never be earlier than the Unix epoch")
+                .as_millis() as u64;
+        }
+    }
+
     pub fn seal(&mut self) -> Result<bson::Document, bson::ser::Error> {
         self.updated_on = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)

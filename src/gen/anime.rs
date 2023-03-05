@@ -4,7 +4,7 @@ use std::time::Instant;
 use log::info;
 use ril::prelude::*;
 use crate::types::*;
-use fast_blurhash::{compute_dct_iter, base83::decode};
+use fast_blurhash::{compute_dct_iter, base83};
 
 const ACCENT_COLOR: Rgb = Rgb::new(241, 143, 243);
 //const GRAY: Rgb = Rgb::new(163, 163, 176);
@@ -44,23 +44,39 @@ pub fn export_poster(cache_key: String, from: &Path, folder: &Path) -> Result<Ca
     image.encode(ImageFormat::WebP, &mut BufWriter::new(File::create(output)?))
         .map_err(|e| anyhow!("Unable to save resized image: {e:?}"))?;
 
-    let placeholder = compute_dct_iter(image.data.iter().map(|p| [p.r, p.g, p.b]),
+    let mut placeholder = compute_dct_iter(image.data.iter().map(|p| [p.r, p.g, p.b]),
         image.width() as usize, image.height() as usize,
         ANIME_PLACEHOLDER_COMPONENTS_X, ANIME_PLACEHOLDER_COMPONENTS_Y)
         .into_blurhash();
 
+    let pixels: Vec<u8> = image.data.into_iter().map(|p| [p.r, p.g, p.b]).flatten().collect();
+    if let Ok(palette) = color_thief::get_palette(&pixels, color_thief::ColorFormat::Rgb, 10, 5) {
+        placeholder.reserve(5);
+        placeholder.push('/');
+        let dominant = palette[2];
+        let color = ((dominant.r as u32) << 16) | ((dominant.g as u32) << 8) | (dominant.b as u32);
+        base83::encode_fixed_to(color, 4, &mut placeholder);
+    }
+
     info!("Successfully generated poster images in {:?}", t.elapsed());
     Ok(CachedImage::with_placeholder(cache_key, placeholder))
+}
+
+fn get_dominant_color(blurhash: &str) -> Option<Rgb> {
+    use base83::decode;
+    let color = match blurhash.split_once("/") {
+        Some((_, right)) => decode(&right[..4]).ok()?,
+        _ => decode(&blurhash[2..6]).ok()?
+    };
+    Some(Rgb::new((color >> 16) as u8, (color >> 8) as u8, color as u8))
 }
 
 pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, folder: &Path) -> Result<()> {
     let t = Instant::now();
     let recipient: &AnimeSeries = recipient.as_ref();
     let file_name: String = format!("{}.webp", recipient.poster.key());
-    let avg_color = match recipient.poster.placeholder().map(|bh| decode(&bh[2..6])) {
-        Some(Ok(avg_color)) => {
-            Rgb::new((avg_color >> 16) as u8, (avg_color >> 8) as u8, avg_color as u8)
-        },
+    let avg_color = match recipient.poster.placeholder().map(get_dominant_color) {
+        Some(Some(color)) => color,
         _ => ACCENT_COLOR
     };
 
