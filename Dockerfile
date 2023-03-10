@@ -1,7 +1,8 @@
-FROM rust:1.67-bullseye AS build
+FROM rust:1.68-bullseye AS build
 ARG BUILD_ID
 LABEL stage=build
 LABEL build=$BUILD_ID
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 
 WORKDIR /usr/src/kanime-api-v3
 

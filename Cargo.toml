@@ -11,13 +11,13 @@ serde = { version = "1.0", features = ["derive"], default-features = false }
 serde_json = "1"
 log = "0.4"
 env_logger = "0.10.0"
-mongodb = "2.3.1"
+mongodb = "2.4.0"
 gethostname = "0.4.1"
-toml = "0.5.10"
+toml = "0.7.2"
 url-escape = "0.1.1"
 anyhow = "1.0"
-meilisearch-sdk = "0.21"
-redis = { version = "0.22.2", features = ["tokio-comp"], default-features = false }
+meilisearch-sdk = "0.22"
+redis = { version = "0.22.3", features = ["tokio-comp"], default-features = false }
 ril = { version = "0", features = ["png", "webp"] }
 actix-easy-multipart = "3.0.0"
 random-string = "1.0.0"
