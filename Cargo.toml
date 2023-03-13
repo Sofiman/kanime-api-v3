@@ -18,7 +18,7 @@ url-escape = "0.1.1"
 anyhow = "1.0"
 meilisearch-sdk = "0.22"
 redis = { version = "0.22.3", features = ["tokio-comp"], default-features = false }
-ril = { version = "0", features = ["webp"] }
+ril = { version = "0", features = ["png", "webp"] }
 actix-easy-multipart = "3.0.0"
 random-string = "1.0.0"
 fast-blurhash = "1.0.1"
