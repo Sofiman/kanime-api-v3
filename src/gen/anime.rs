@@ -23,24 +23,24 @@ const ANIME_PLACEHOLDER_COMPONENTS_X: usize = 4;
 const ANIME_PLACEHOLDER_COMPONENTS_Y: usize = 7;
 
 #[allow(dead_code)]
-pub fn get_fullres_path(key: &str, folder: &Path) -> PathBuf {
-    folder.join(ANIME_POSTER_FULLRES_FOLDER).join(format!("{key}.webp"))
+pub fn get_fullres_path(key: &str, cache_folder: &Path) -> PathBuf {
+    cache_folder.join(ANIME_POSTER_FULLRES_FOLDER).join(format!("{key}.webp"))
 }
 
-pub fn export_poster(cache_key: String, from: &Path, folder: &Path) -> Result<CachedImage> {
+pub fn export_poster(cache_key: String, from: &Path, cache_folder: &Path) -> Result<CachedImage> {
     let t = Instant::now();
     let file_name: String = format!("{cache_key}.webp");
     let mut image: Image<Rgb> = Image::from_reader(ImageFormat::WebP, BufReader::new(File::open(from)?))
         .map_err(|e| anyhow!("Unable to open uploaded file: {e:?}"))?;
 
     // original poster
-    let output = folder.join(ANIME_POSTER_FULLRES_FOLDER).join(file_name.clone());
+    let output = cache_folder.join(ANIME_POSTER_FULLRES_FOLDER).join(file_name.clone());
     image.encode(ImageFormat::WebP, &mut BufWriter::new(File::create(output)?))
         .map_err(|e| anyhow!("Unable to save original image: {e:?}"))?;
 
     // small poster
     image.resize(ANIME_POSTER_MEDIUM_WIDTH, ANIME_POSTER_MEDIUM_HEIGHT, ResizeAlgorithm::Lanczos3);
-    let output = folder.join(ANIME_POSTER_MEDIUM_FOLDER).join(file_name);
+    let output = cache_folder.join(ANIME_POSTER_MEDIUM_FOLDER).join(file_name);
     image.encode(ImageFormat::WebP, &mut BufWriter::new(File::create(output)?))
         .map_err(|e| anyhow!("Unable to save resized image: {e:?}"))?;
 
@@ -71,7 +71,7 @@ fn get_dominant_color(blurhash: &str) -> Option<Rgb> {
     Some(Rgb::new((color >> 16) as u8, (color >> 8) as u8, color as u8))
 }
 
-pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, folder: &Path) -> Result<()> {
+pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, cache_folder: &Path) -> Result<()> {
     let t = Instant::now();
     let recipient: &AnimeSeries = recipient.as_ref();
     let file_name: String = format!("{}.webp", recipient.poster.key());
@@ -85,7 +85,7 @@ pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, folder: &Path) -> R
         let mut template: Image<Rgb> = Image::from_reader(ANIME_PRESENTER_TEMPLATE_FORMAT, input)
             .map_err(|e| anyhow!("Unable to open template image: {e:?}"))?;
 
-        let from = folder.join(ANIME_POSTER_FULLRES_FOLDER).join(file_name.clone());
+        let from = cache_folder.join(ANIME_POSTER_FULLRES_FOLDER).join(file_name.clone());
         let input = BufReader::new(File::open(from)?);
         let mut poster: Image<Rgb> = Image::from_reader(ImageFormat::WebP, input)
             .map_err(|e| anyhow!("Unable to open uploaded file: {e:?}"))?;
@@ -140,7 +140,7 @@ pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, folder: &Path) -> R
         .with_basic_text(&bold, recipient.manga.volumes.to_string(), avg_color)
         .with_basic_text(&bold, " volumes", Rgb::white()));
 
-    let output = folder.join(ANIME_PRESENTER_FOLDER).join(file_name);
+    let output = cache_folder.join(ANIME_PRESENTER_FOLDER).join(file_name);
     presenter.encode(ImageFormat::WebP, &mut BufWriter::new(File::create(output)?))
         .map_err(|e| anyhow!("Unable to save presenter image: {e:?}"))?;
 

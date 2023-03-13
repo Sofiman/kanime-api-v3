@@ -12,6 +12,7 @@ use std::fs::File;
 use crate::gen::anime::*;
 use crate::types::*;
 use crate::middlewares::auth::{Role, RequireRoleGuard};
+use super::seo;
 
 const CACHE_KEY_ALPHABET: &str = "ABCDEFGHIJKMNOPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789";
 
@@ -187,7 +188,8 @@ async fn push_anime(form: MultipartForm<AnimeMultipartCandidate>, app: Data<AppS
 
     let poster = form.poster;
     match poster.content_type.as_ref().map(AsRef::as_ref) {
-        Some("image/webp") | Some("image/png") => {
+        // TODO: Add support for other types of images
+        Some("image/webp") /*| Some("image/png")*/ => {
             match export_poster(anime.poster.key().to_string(), poster.file.path(), &app.cache_folder) {
                 Ok(ci) => {
                     anime.poster = ci;
@@ -204,7 +206,7 @@ async fn push_anime(form: MultipartForm<AnimeMultipartCandidate>, app: Data<AppS
         },
         _ => {
             poster.file.close().unwrap_or_else(|_| warn!("Could not delete temp file"));
-            return KError::bad_request("Only webp or png images are supported")
+            return KError::bad_request("Only webp images are supported")
         }
     }
 
@@ -217,6 +219,10 @@ async fn push_anime(form: MultipartForm<AnimeMultipartCandidate>, app: Data<AppS
             let anime = WithID::new(inserted_id, anime);
             if let Err(e) = send_anime_to_meili(anime.clone().into(), &app).await {
                 warn!("Could not add pushed anime to meilisearch: {e:?}");
+            }
+            // TODO: Maybe try to not rebuild everything but just add the new anime
+            if let Err(e) = seo::build_sitemap(&app).await {
+                warn!("Could not rebuild sitemap: {e:?}");
             }
             HttpResponse::Created().json(anime)
         },
@@ -258,6 +264,10 @@ async fn apply_anime_patch(anime_id: &ObjectId, app: &AppState, mut patch: Anime
     if let Some(patch) = AnimeSeriesSearchEntryPatch::from_patch(anime_id.to_hex(), patch) {
         apply_anime_search_entry_patch(app, patch).await
             .unwrap_or_else(|e| warn!("Could not update meilisearch index: {e:?}"));
+    }
+    // TODO: Maybe just update the corresponding entry and not everything
+    if let Err(e) = seo::build_sitemap(&app).await {
+        warn!("Could not rebuild sitemap: {e:?}");
     }
     Ok(true)
 }
@@ -367,6 +377,11 @@ async fn delete_anime(path: Path<String>, app: Data<AppState>) -> HttpResponse {
 
             if let Err(e) = delete_from_meili(&anime.id, &app).await {
                 warn!("Could not remove deleted anime from meilisearch: {e:?}");
+            }
+
+            // TODO: Maybe just delete the corresponding entry and not everything
+            if let Err(e) = seo::build_sitemap(&app).await {
+                warn!("Could not rebuild sitemap: {e:?}");
             }
 
             HttpResponse::NoContent().finish()

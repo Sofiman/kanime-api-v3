@@ -68,10 +68,12 @@ async fn main() -> std::io::Result<()> {
 
     info!(target: "http", "Listening on {}:{}", addr.0, addr.1);
     let debug = config.debug.unwrap_or(false);
+    let domain = config.domain.to_string();
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(AppState {
                 app_name: name.clone(),
+                domain: domain.clone(),
                 version_info: json!({
                     "major": MAJOR_VERSION.unwrap_or("3"),
                     "minor": MINOR_VERSION.unwrap_or("0"),

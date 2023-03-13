@@ -1,4 +1,5 @@
 pub mod anime;
+pub mod seo;
 use actix_web::{web, HttpResponse};
 use actix_web::http::header::ContentType;
 use crate::types::AppState;
@@ -13,4 +14,5 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/version", web::get().to(get_version));
 
     anime::configure(cfg);
+    seo::configure(cfg);
 }

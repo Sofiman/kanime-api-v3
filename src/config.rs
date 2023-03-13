@@ -8,8 +8,10 @@ pub const DEFAULT_MONGO_PORT: u16 = 27017;
 pub const DEFAULT_REDIS_PORT: u16 = 6379;
 
 #[derive(Deserialize)]
-pub struct Config<'ha, 'moa, 'mob, 'moc, 'msa, 'msb, 'cf> {
+pub struct Config<'ha, 'moa, 'mob, 'moc, 'msa, 'msb, 'cf, 'd> {
     pub debug: Option<bool>,
+    #[serde(borrow)]
+    pub domain: &'d str,
     #[serde(borrow)]
     pub cache_folder: &'cf str,
 

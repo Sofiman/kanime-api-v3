@@ -7,6 +7,7 @@ use serde_json::json;
 
 pub struct AppState {
     pub app_name: String,
+    pub domain: String,
     pub version_info: String,
     pub mongodb: mongodb::Client,
     pub meilisearch: meilisearch_sdk::Client,
