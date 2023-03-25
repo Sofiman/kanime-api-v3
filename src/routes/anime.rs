@@ -26,10 +26,13 @@ const ANIMES_SEARCH_DEFAULT_LIMIT: u32 = 10;
 const ANIMES_SEARCH_SOFT_LIMIT: u32 = 100;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchQuery {
     query: String,
     offset: Option<u32>,
     limit: Option<u32>,
+    #[serde(default)]
+    display_matches: bool
 }
 
 impl SearchQuery {
@@ -112,13 +115,14 @@ async fn search_animes(query: SearchQuery, app: Data<AppState>) -> HttpResponse 
         .with_offset(query.offset.unwrap_or(0) as usize)
         .with_limit(query.limit.unwrap_or(ANIMES_SEARCH_DEFAULT_LIMIT)
             .min(ANIMES_SEARCH_SOFT_LIMIT) as usize)
+        .with_show_matches_position(query.display_matches)
         .execute()
         .await;
 
     match results {
         Ok(docs) => {
             let docs: Vec<AnimeSeriesSearchEntry> = docs.hits.into_iter()
-                .map(|r| r.result).collect();
+                .map(|r| r.into()).collect();
             info!("Found {} results for `{}`", docs.len(), query.query);
             HttpResponse::Ok().json(docs)
         }

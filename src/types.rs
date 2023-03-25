@@ -1,4 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use actix_web::HttpResponse;
 use mongodb::bson::{self, serde_helpers::hex_string_as_object_id};
@@ -318,6 +319,20 @@ impl AnimeSeriesPatch {
 // Meilisearch related
 pub const ANIME_PRIMARY_KEY: &str = "id";
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct MatchRange {
+    pub start: usize,
+    pub length: usize
+}
+
+impl From<meilisearch_sdk::search::MatchRange> for MatchRange {
+    fn from(mr: meilisearch_sdk::search::MatchRange) -> Self {
+        Self { start: mr.start, length: mr.length }
+    }
+}
+
+pub type MatchRanges = HashMap<String, Vec<MatchRange>>;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimeSeriesSearchEntry {
@@ -325,6 +340,21 @@ pub struct AnimeSeriesSearchEntry {
     titles: Vec<String>,
     author: String,
     poster: CachedImage,
+    #[serde(rename(deserialize = "_matchesPosition"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    matches_position: Option<MatchRanges>
+}
+
+impl From<meilisearch_sdk::search::SearchResult<AnimeSeriesSearchEntry>> for AnimeSeriesSearchEntry {
+    fn from(r: meilisearch_sdk::search::SearchResult<AnimeSeriesSearchEntry>) -> Self {
+        let mut result = r.result;
+        result.matches_position = r.matches_position.map(|m| {
+            m.into_iter()
+                .map(|(key, val)| (key, val.into_iter().map(|r| r.into()).collect()))
+                .collect()
+        });
+        result
+    }
 }
 
 impl From<WithOID<AnimeSeries>> for AnimeSeriesSearchEntry {
@@ -333,7 +363,8 @@ impl From<WithOID<AnimeSeries>> for AnimeSeriesSearchEntry {
             id: value.id,
             titles: value.inner.titles,
             author: value.inner.manga.author,
-            poster: value.inner.poster
+            poster: value.inner.poster,
+            matches_position: None
         }
     }
 }
@@ -344,7 +375,8 @@ impl From<WithID<AnimeSeries>> for AnimeSeriesSearchEntry {
             id: value.id,
             titles: value.inner.titles,
             author: value.inner.manga.author,
-            poster: value.inner.poster
+            poster: value.inner.poster,
+            matches_position: None
         }
     }
 }
@@ -387,6 +419,7 @@ pub fn get_search_entry() -> AnimeSeriesSearchEntry {
             "d07f449fdeb9e559e19095db31da14ff".to_string(),
             "TFOBAk}sIT9r?ZI=u,$zKK#lNYx[".to_string(),
         ),
+        matches_position: None
     }
 }
 
