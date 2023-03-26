@@ -71,6 +71,32 @@ fn get_dominant_color(blurhash: &str) -> Option<Rgb> {
     Some(Rgb::new((color >> 16) as u8, (color >> 8) as u8, color as u8))
 }
 
+fn fit_and_draw_title(image: &mut ril::Image<ril::Rgb>, pos: (u32, u32),
+    max_width: u32, max_height: u32, font_buf: &[u8], mut text: &str, mut size: f32) -> Result<()> {
+    if text.len() > 585 {
+        text = &text[..585];
+    }
+    loop {
+        let font = Font::from_bytes(font_buf, size)
+            .map_err(|e| anyhow!("Unable to decode font: {e:?}"))?;
+
+        let layout = TextLayout::new() // title
+            .with_position(pos.0, pos.1)
+            .with_width(max_width)
+            .with_wrap(WrapStyle::Word)
+            .with_basic_text(&font, text, Rgb::white());
+
+        if layout.height() <= max_height || size <= 16. {
+            image.draw(&layout);
+            break;
+        }
+
+        size -= 1.0;
+    }
+
+    Ok(())
+}
+
 pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, cache_folder: &Path) -> Result<()> {
     let t = Instant::now();
     let recipient: &AnimeSeries = recipient.as_ref();
@@ -97,23 +123,27 @@ pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, cache_folder: &Path
         (template, poster_width)
     };
 
-    let bold = Font::open("assets/fonts/Poppins-Bold.ttf", 28.0)
-        .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
-    let xbold = Font::open("assets/fonts/Poppins-ExtraBold.ttf", 64.0)
+    { // render title
+        let xbold_buf = std::fs::read("assets/fonts/Poppins-ExtraBold.ttf")
+            .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
+
+        let w = presenter.width() - poster_width - 64;
+        fit_and_draw_title(&mut presenter, (452, 82), w, 212,
+            &xbold_buf, &recipient.titles[0], 64.)?;
+    }
+
+    let bold_buf = std::fs::read("assets/fonts/Poppins-ExtraBold.ttf")
         .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
 
-    presenter.draw(&TextLayout::new() // title
-        .with_position(452, 82)
-        .with_width(presenter.width() - poster_width - 64)
-        .with_wrap(WrapStyle::Word)
-        .with_basic_text(&xbold, recipient.titles[0].as_str(), Rgb::white()));
+    let bold = Font::from_bytes(&bold_buf, 28.0)
+        .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
 
     presenter.draw(&TextLayout::new() // year
         .centered()
         .with_position(452 + 64, 32 + 21 + 2)
         .with_basic_text(&bold, recipient.anime.release_year.to_string(), ACCENT_COLOR));
 
-    let bold = Font::open("assets/fonts/Poppins-Bold.ttf", 32.0)
+    let bold = Font::from_bytes(&bold_buf, 32.0)
         .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
 
     presenter.draw(&TextLayout::new() // episode count
