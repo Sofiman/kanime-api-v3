@@ -105,7 +105,7 @@ impl<T> WithID<T> {
 
 impl<T> From<WithOID<T>> for WithID<T> {
     fn from(value: WithOID<T>) -> Self {
-        WithID {
+        Self {
             id: value.id,
             inner: value.inner,
         }
@@ -207,9 +207,9 @@ pub struct AnimeSeries {
     pub created_on: u64,
 }
 
-impl AsRef<AnimeSeries> for AnimeSeries {
-    fn as_ref(&self) -> &AnimeSeries {
-        &self
+impl AsRef<Self> for AnimeSeries {
+    fn as_ref(&self) -> &Self {
+        self
     }
 }
 
@@ -345,8 +345,8 @@ pub struct AnimeSeriesSearchEntry {
     matches_position: Option<MatchRanges>
 }
 
-impl From<meilisearch_sdk::search::SearchResult<AnimeSeriesSearchEntry>> for AnimeSeriesSearchEntry {
-    fn from(r: meilisearch_sdk::search::SearchResult<AnimeSeriesSearchEntry>) -> Self {
+impl From<meilisearch_sdk::search::SearchResult<Self>> for AnimeSeriesSearchEntry {
+    fn from(r: meilisearch_sdk::search::SearchResult<Self>) -> Self {
         let mut result = r.result;
         result.matches_position = r.matches_position.map(|m| {
             m.into_iter()
@@ -359,7 +359,7 @@ impl From<meilisearch_sdk::search::SearchResult<AnimeSeriesSearchEntry>> for Ani
 
 impl From<WithOID<AnimeSeries>> for AnimeSeriesSearchEntry {
     fn from(value: WithOID<AnimeSeries>) -> Self {
-        AnimeSeriesSearchEntry {
+        Self {
             id: value.id,
             titles: value.inner.titles,
             author: value.inner.manga.author,
@@ -371,7 +371,7 @@ impl From<WithOID<AnimeSeries>> for AnimeSeriesSearchEntry {
 
 impl From<WithID<AnimeSeries>> for AnimeSeriesSearchEntry {
     fn from(value: WithID<AnimeSeries>) -> Self {
-        AnimeSeriesSearchEntry {
+        Self {
             id: value.id,
             titles: value.inner.titles,
             author: value.inner.manga.author,

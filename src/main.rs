@@ -1,5 +1,6 @@
-#[allow(dead_code)] // only for the types
+#[allow(dead_code)]
 mod types;
+#[allow(dead_code)]
 mod config;
 mod routes;
 mod middlewares;
@@ -55,16 +56,15 @@ async fn main() -> std::io::Result<()> {
     if meilisearch.is_healthy().await {
         info!(target: "meilisearch", "Successfully connected!");
         if config.meilisearch.auto_sync.unwrap_or(true) {
-            match routes::anime::sync_meilisearch(&mongodb, &meilisearch).await {
-                Err(e) => error!("Could not perform auto-sync: {e}"),
-                _ => (),
+            if let Err(e) = routes::anime::sync_meilisearch(&mongodb, &meilisearch).await {
+                 error!("Could not perform auto-sync: {e}");
             }
         }
     } else {
         warn!(target: "meilisearch", "No signs of life...");
     }
 
-    let cache_folder = Path::new(config.cache_folder.clone()).to_path_buf();
+    let cache_folder = Path::new(&config.cache_folder).to_path_buf();
 
     info!(target: "http", "Listening on {}:{}", addr.0, addr.1);
     let debug = config.debug.unwrap_or(false);

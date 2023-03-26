@@ -1,6 +1,5 @@
 use meilisearch_sdk::Client;
 use serde::Deserialize;
-#[allow(dead_code)]
 
 pub const CONFIG_FILE: &str = "config.toml";
 pub const DEFAULT_PORT: u16 = 80;

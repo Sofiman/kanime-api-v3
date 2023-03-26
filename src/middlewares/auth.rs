@@ -41,7 +41,7 @@ fn validate_nanoid(str: &str, expected_len: u8) -> bool {
     str.len() == expected_len as usize && str.chars().all(|c| NANOID_ALPHABET.contains(&c))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
     User,
@@ -93,7 +93,7 @@ impl<S> KanimeAuthMiddleware<S> {
     async fn get_session(app: web::Data<AppState>, req: &ServiceRequest) -> Result<SessionResult> {
         use SessionResult::*;
         if let Some(Ok(val)) = req.headers().get(AUTHORIZATION_HEADER).map(HeaderValue::to_str) {
-            if let Some((TOKEN_BASE_TYPE, right)) = val.split_once(" ") {
+            if let Some((TOKEN_BASE_TYPE, right)) = val.split_once(' ') {
                 if !validate_nanoid(right, TOKEN_LENGTH) {
                     return Ok(Invalid("Bad token formatting", StatusCode::BAD_REQUEST));
                 }
@@ -162,9 +162,6 @@ impl Guard for RequireRoleGuard {
     fn check(&self, req: &GuardContext) -> bool {
         let exts = req.req_data();
         let session: Option<&Session> = exts.get();
-        match session {
-            Some(session) if session.role == self.0 => true,
-            _ => false
-        }
+        matches!(session, Some(session) if session.role == self.0)
     }
 }

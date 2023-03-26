@@ -42,11 +42,11 @@ impl SearchQuery {
     }
 }
 
-fn to_oid(id: String) -> Option<ObjectId> {
+fn to_oid(id: &str) -> Option<ObjectId> {
     if id.len() != 24 { // ObjectId length
         return None;
     }
-    ObjectId::parse_str(&id).ok()
+    ObjectId::parse_str(id).ok()
 }
 
 pub async fn sync_meilisearch(mongodb: &Client, meilisearch: &meilisearch_sdk::Client) -> Result<()> {
@@ -55,13 +55,13 @@ pub async fn sync_meilisearch(mongodb: &Client, meilisearch: &meilisearch_sdk::C
         Err(Error::Meilisearch(MeilisearchError { error_code: ErrorCode::IndexNotFound, .. })) => {
             let index = meilisearch
                 .create_index(ANIMES_INDEX, Some(ANIME_PRIMARY_KEY)).await?
-                .wait_for_completion(&meilisearch, None, None).await?
-                .try_make_index(&meilisearch)
+                .wait_for_completion(meilisearch, None, None).await?
+                .try_make_index(meilisearch)
                 .map_err(|t| anyhow!("Failed to create index `{ANIMES_INDEX}`: {t:?}"))?;
             info!(target: "meilisearch","Successfully created index `{ANIMES_INDEX}`");
 
             index.set_searchable_attributes(&["titles", "author"]).await?
-                .wait_for_completion(&meilisearch, None, None).await?;
+                .wait_for_completion(meilisearch, None, None).await?;
             info!(target: "meilisearch","Setup completed for index `{ANIMES_INDEX}`");
             index
         },
@@ -89,14 +89,12 @@ pub async fn sync_meilisearch(mongodb: &Client, meilisearch: &meilisearch_sdk::C
         let current: WithOID<AnimeSeries> = cur.deserialize_current()?;
         queue.push(current.into());
         if queue.len() == ANIMES_INDEX_BATCH_SIZE {
-            index.add_or_replace(&queue, Some(ANIME_PRIMARY_KEY)).await?
-                .wait_for_completion(&meilisearch, None, None).await?;
+            index.add_or_replace(&queue, Some(ANIME_PRIMARY_KEY)).await?;
             queue.clear();
         }
     }
     if !queue.is_empty() {
-        index.add_or_replace(&queue, Some(ANIME_PRIMARY_KEY)).await?
-            .wait_for_completion(&meilisearch, None, None).await?;
+        index.add_or_replace(&queue, Some(ANIME_PRIMARY_KEY)).await?;
     }
     info!(target: "meilisearch", "Sync completed successfully!");
 
@@ -150,7 +148,7 @@ async fn find_anime(anime_id: &ObjectId, app: &AppState) -> Result<Option<WithOI
 
 #[get("/anime/{id}")]
 pub async fn fetch_anime_details(path: Path<String>, app: Data<AppState>) -> impl Responder {
-    let Some(anime_id) = to_oid(path.into_inner()) else {
+    let Some(anime_id) = to_oid(&path.into_inner()) else {
         return KError::bad_request("The provided ID is not valid");
     };
     match find_anime(&anime_id, &app).await {
@@ -270,15 +268,15 @@ async fn apply_anime_patch(anime_id: &ObjectId, app: &AppState, mut patch: Anime
             .unwrap_or_else(|e| warn!("Could not update meilisearch index: {e:?}"));
     }
     // TODO: Maybe just update the corresponding entry and not everything
-    if let Err(e) = seo::build_sitemap(&app).await {
+    if let Err(e) = seo::build_sitemap(app).await {
         warn!("Could not rebuild sitemap: {e:?}");
     }
     Ok(true)
 }
 
-async fn patch_anime(path: Path<String>, form: MultipartForm<AnimeMultipartPatch>,
+async fn patch_anime(params: Path<String>, form: MultipartForm<AnimeMultipartPatch>,
     app: Data<AppState>) -> HttpResponse {
-    let Some(anime_id) = to_oid(path.into_inner()) else {
+    let Some(anime_id) = to_oid(&params.into_inner()) else {
         return KError::bad_request("The provided ID is not valid");
     };
     let form = form.into_inner();
@@ -289,7 +287,7 @@ async fn patch_anime(path: Path<String>, form: MultipartForm<AnimeMultipartPatch
 
     if let Some(poster) = form.poster {
         match poster.content_type.as_ref().map(AsRef::as_ref) {
-            Some("image/webp") | Some("image/png") => {
+            Some("image/webp"/* | "image/png"*/) => {
                 let Ok(Some(anime)) = find_anime(&anime_id, &app).await else {
                     poster.file.close().unwrap_or_else(|_| warn!("Could not delete temp file"));
                     return KError::bad_request("The provided ID is not valid");
@@ -342,17 +340,13 @@ async fn patch_anime(path: Path<String>, form: MultipartForm<AnimeMultipartPatch
 
 fn create_backup(anime: &WithID<AnimeSeries>) -> anyhow::Result<()> {
     let backup = File::create(format!("{}.deleted.json", anime.id))?;
-    match serde_json::to_writer(backup, &anime) {
-        Err(_) => {
-            let json = serde_json::to_string(&anime)?;
-            warn!("Could not save backup file, anime = `{json}`");
-            Ok(())
-        }
-        _ => {
-            info!("Successfully backed up deleted anime");
-            Ok(())
-        }
+    if let Err(e) = serde_json::to_writer(backup, &anime) {
+        let json = serde_json::to_string(&anime)?;
+        warn!("Could not save backup file ({e:?}), anime = `{json}`");
+    } else {
+        info!("Successfully backed up deleted anime");
     }
+    Ok(())
 }
 
 async fn find_and_delete(anime_id: &ObjectId, app: &AppState) -> Result<Option<WithOID<AnimeSeries>>> {
@@ -370,7 +364,7 @@ async fn delete_from_meili(anime_id: &str, app: &AppState) -> Result<()> {
 }
 
 async fn delete_anime(path: Path<String>, app: Data<AppState>) -> HttpResponse {
-    let Some(anime_id) = to_oid(path.into_inner()) else {
+    let Some(anime_id) = to_oid(&path.into_inner()) else {
         return KError::bad_request("The provided ID is not valid");
     };
     match find_and_delete(&anime_id, &app).await {
