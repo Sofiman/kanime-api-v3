@@ -3,6 +3,7 @@ use std::{fs::File, path::{Path, PathBuf}, io::{BufReader, BufWriter}};
 use std::time::Instant;
 use log::info;
 use ril::prelude::*;
+use ril::{Encoder, encodings::webp::WebPEncoder};
 use crate::types::{AnimeSeries, CachedImage};
 use fast_blurhash::{compute_dct_iter, base83};
 
@@ -14,6 +15,7 @@ const ANIME_POSTER_FULLRES_FOLDER: &str = "fullres";
 const ANIME_POSTER_MEDIUM_FOLDER: &str = "310x468";
 const ANIME_POSTER_MEDIUM_WIDTH: u32 = 310;
 const ANIME_POSTER_MEDIUM_HEIGHT: u32 = 468;
+const ANIME_POSTER_MEDIUM_QUALITY: f32 = 80.;
 
 const ANIME_PRESENTER_TEMPLATE: &str = "assets/templates/AnimePresenter.png";
 const ANIME_PRESENTER_TEMPLATE_FORMAT: ImageFormat = ImageFormat::Png;
@@ -35,13 +37,18 @@ pub fn export_poster(cache_key: String, from: &Path, cache_folder: &Path) -> Res
 
     // original poster
     let output = cache_folder.join(ANIME_POSTER_FULLRES_FOLDER).join(file_name.clone());
-    image.encode(ImageFormat::WebP, &mut BufWriter::new(File::create(output)?))
+    WebPEncoder::new()
+        .with_quality(100.)
+        .with_lossless(true)
+        .encode(&image, &mut BufWriter::new(File::create(output)?))
         .map_err(|e| anyhow!("Unable to save original image: {e:?}"))?;
 
     // small poster
     image.resize(ANIME_POSTER_MEDIUM_WIDTH, ANIME_POSTER_MEDIUM_HEIGHT, ResizeAlgorithm::Lanczos3);
     let output = cache_folder.join(ANIME_POSTER_MEDIUM_FOLDER).join(file_name);
-    image.encode(ImageFormat::WebP, &mut BufWriter::new(File::create(output)?))
+    WebPEncoder::new()
+        .with_quality(ANIME_POSTER_MEDIUM_QUALITY)
+        .encode(&image, &mut BufWriter::new(File::create(output)?))
         .map_err(|e| anyhow!("Unable to save resized image: {e:?}"))?;
 
     let mut placeholder = compute_dct_iter(image.data.iter().map(|p| [p.r, p.g, p.b]),
@@ -72,20 +79,20 @@ fn get_dominant_color(blurhash: &str) -> Option<Rgb> {
 }
 
 fn fit_and_draw_title(image: &mut ril::Image<ril::Rgb>, pos: (u32, u32),
-    max_width: u32, max_height: u32, font_buf: &[u8], mut text: &str, mut size: f32) -> Result<()> {
+    max_width: u32, max_height: u32, font: &Font, mut text: &str, mut size: f32) -> Result<()> {
     if text.len() > 585 {
         text = &text[..585];
     }
+    let mut segment = TextSegment::new(&font, text, Rgb::white()).with_size(size);
+
     loop {
-        let font = Font::from_bytes(font_buf, size)
-            .map_err(|e| anyhow!("Unable to decode font: {e:?}"))?;
+        segment.size = size;
 
         let layout = TextLayout::new() // title
             .with_position(pos.0, pos.1)
             .with_width(max_width)
             .with_wrap(WrapStyle::Word)
-            .with_basic_text(&font, text, Rgb::white());
-
+            .with_segment(&segment);
         if layout.height() <= max_height || size <= 16. {
             image.draw(&layout);
             break;
@@ -124,12 +131,13 @@ pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, cache_folder: &Path
     };
 
     { // render title
-        let xbold_buf = std::fs::read("assets/fonts/Poppins-ExtraBold.ttf")
+        const TITLE_BASE_FONT_SIZE: f32 = 64.;
+        let xbold = Font::open("assets/fonts/Poppins-ExtraBold.ttf", TITLE_BASE_FONT_SIZE)
             .map_err(|e| anyhow!("Unable to open font file: {e:?}"))?;
 
         let w = presenter.width() - poster_width - 64;
         fit_and_draw_title(&mut presenter, (452, 82), w, 212,
-            &xbold_buf, &recipient.titles[0], 64.)?;
+            &xbold, &recipient.titles[0], TITLE_BASE_FONT_SIZE)?;
     }
 
     let bold_buf = std::fs::read("assets/fonts/Poppins-ExtraBold.ttf")
@@ -171,7 +179,10 @@ pub fn export_presenter<T: AsRef<AnimeSeries>>(recipient: T, cache_folder: &Path
         .with_basic_text(&bold, " volumes", Rgb::white()));
 
     let output = cache_folder.join(ANIME_PRESENTER_FOLDER).join(file_name);
-    presenter.encode(ImageFormat::WebP, &mut BufWriter::new(File::create(output)?))
+    WebPEncoder::new()
+        .with_quality(100.)
+        .with_lossless(true)
+        .encode(&presenter, &mut BufWriter::new(File::create(output)?))
         .map_err(|e| anyhow!("Unable to save presenter image: {e:?}"))?;
 
     info!("Successfully generated presenter image in {:?}", t.elapsed());
