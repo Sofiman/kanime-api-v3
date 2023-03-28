@@ -133,7 +133,9 @@ impl<S, B> Service<ServiceRequest> for KanimeAuthMiddleware<S>
     fn call(&self, req: ServiceRequest) -> Self::Future {
         use SessionResult::*;
         let svc = self.service.clone();
-        let app = req.app_data::<web::Data<AppState>>().unwrap().clone();
+        let app = req.app_data::<web::Data<AppState>>().
+            expect("This middleware should always be used with a http server that have an AppState")
+            .clone();
         Box::pin(async move {
             match Self::get_session(app, &req).await {
                 Ok(Anonymous) => svc.call(req).await.map(ServiceResponse::map_into_left_body),
