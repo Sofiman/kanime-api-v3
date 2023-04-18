@@ -141,7 +141,7 @@ pub struct AnimeReleaseInfo {
 pub enum SeasonKind {
     Season,
     Movie,
-    Oav,
+    Ova,
     SpinOff,
 }
 
